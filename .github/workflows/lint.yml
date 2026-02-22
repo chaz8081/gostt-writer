@@ -1,0 +1,41 @@
+name: Lint
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: golangci-lint
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+
+      - name: Build whisper.cpp (needed for CGO headers)
+        run: task whisper
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: latest
+        env:
+          CGO_ENABLED: "1"
+          C_INCLUDE_PATH: "${{ github.workspace }}/third_party/whisper.cpp/include:${{ github.workspace }}/third_party/whisper.cpp/ggml/include"
+          LIBRARY_PATH: "${{ github.workspace }}/third_party/whisper.cpp/build_go/src:${{ github.workspace }}/third_party/whisper.cpp/build_go/ggml/src:${{ github.workspace }}/third_party/whisper.cpp/build_go/ggml/src/ggml-blas:${{ github.workspace }}/third_party/whisper.cpp/build_go/ggml/src/ggml-metal"
