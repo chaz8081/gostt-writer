@@ -38,7 +38,7 @@ func ScanForDevices(adapter Adapter, timeout time.Duration) ([]Device, error) {
 
 	devices, err := adapter.Scan(ctx, ServiceUUID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ble: scan: %w", err)
 	}
 	return devices, nil
 }
@@ -53,7 +53,9 @@ func Pair(adapter Adapter, deviceMAC string, opts PairOptions) (*PairResult, err
 		return nil, fmt.Errorf("ble: enable adapter: %w", err)
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), opts.Timeout)
+	defer cancel()
+
 	conn, err := adapter.Connect(ctx, deviceMAC)
 	if err != nil {
 		return nil, fmt.Errorf("ble: connect for pairing: %w", err)
