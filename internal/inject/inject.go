@@ -8,6 +8,11 @@ import (
 	"github.com/go-vgo/robotgo"
 )
 
+// TextInjector is the interface for all injection methods.
+type TextInjector interface {
+	Inject(text string) error
+}
+
 // Injector handles typing or pasting text into the active application.
 type Injector struct {
 	method string // "type" or "paste"
