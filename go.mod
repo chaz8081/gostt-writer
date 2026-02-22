@@ -10,6 +10,7 @@ require (
 	github.com/robotn/gohook v0.42.3
 	golang.org/x/crypto v0.48.0
 	gopkg.in/yaml.v3 v3.0.1
+	tinygo.org/x/bluetooth v0.14.0
 )
 
 require (
@@ -26,8 +27,14 @@ require (
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/robotn/xgb v0.10.0 // indirect
 	github.com/robotn/xgbutil v0.10.0 // indirect
+	github.com/saltosystems/winrt-go v0.0.0-20240509164145-4f7860a3bd2b // indirect
 	github.com/shirou/gopsutil/v4 v4.25.10 // indirect
+	github.com/sirupsen/logrus v1.9.3 // indirect
+	github.com/soypat/cyw43439 v0.0.0-20250505012923-830110c8f4af // indirect
+	github.com/soypat/seqs v0.0.0-20250124201400-0d65bc7c1710 // indirect
 	github.com/tailscale/win v0.0.0-20250627215312-f4da2b8ee071 // indirect
+	github.com/tinygo-org/cbgo v0.0.4 // indirect
+	github.com/tinygo-org/pio v0.2.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/tklauser/numcpus v0.11.0 // indirect
 	github.com/vcaesar/gops v0.41.0 // indirect

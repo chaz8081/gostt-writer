@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/chaz8081/gostt-writer/internal/audio"
+	"github.com/chaz8081/gostt-writer/internal/ble"
 	"github.com/chaz8081/gostt-writer/internal/config"
 	"github.com/chaz8081/gostt-writer/internal/hotkey"
 	"github.com/chaz8081/gostt-writer/internal/inject"
@@ -81,8 +83,34 @@ func main() {
 	slog.Info("Audio recorder ready")
 
 	// Initialize text injector
-	injector := inject.NewInjector(cfg.Inject.Method)
-	slog.Info("Text injector ready", "method", cfg.Inject.Method)
+	var injector inject.TextInjector
+	switch cfg.Inject.Method {
+	case "ble":
+		key, err := hex.DecodeString(cfg.Inject.BLE.SharedSecret)
+		if err != nil {
+			slog.Error("Invalid BLE shared secret", "error", err)
+			os.Exit(1)
+		}
+		bleAdapter := ble.NewCoreBluetoothAdapter()
+		bleClient, err := ble.NewClient(bleAdapter, cfg.Inject.BLE.DeviceMAC, key, ble.ClientOptions{
+			QueueSize:    cfg.Inject.BLE.QueueSize,
+			ReconnectMax: cfg.Inject.BLE.ReconnectMax,
+		})
+		if err != nil {
+			slog.Error("Invalid BLE configuration", "error", err)
+			os.Exit(1)
+		}
+		if err := bleClient.Connect(); err != nil {
+			slog.Error("BLE connection failed", "error", err,
+				"hint", "Ensure ESP32-S3 is powered on and in range. Re-pair with: task ble-pair")
+			os.Exit(1)
+		}
+		injector = inject.NewBLEInjector(bleClient)
+		slog.Info("Text injector ready", "method", "ble", "device", cfg.Inject.BLE.DeviceMAC)
+	default:
+		injector = inject.NewInjector(cfg.Inject.Method)
+		slog.Info("Text injector ready", "method", cfg.Inject.Method)
+	}
 
 	// Initialize hotkey listener
 	listener := hotkey.NewListener(cfg.Hotkey.Keys, cfg.Hotkey.Mode)
@@ -182,6 +210,9 @@ func main() {
 			}
 			recorder.Close()
 			transcriber.Close()
+			if closer, ok := injector.(interface{ Close() error }); ok {
+				closer.Close()
+			}
 			slog.Info("Goodbye!")
 			// Exit directly to avoid gohook's C cleanup crash.
 			// The OS reclaims the event hook on process exit.

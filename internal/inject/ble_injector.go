@@ -29,3 +29,11 @@ func (b *BLEInjector) Inject(text string) error {
 	}
 	return b.sender.Send(text)
 }
+
+// Close disconnects the BLE client if the sender supports it.
+func (b *BLEInjector) Close() error {
+	if closer, ok := b.sender.(interface{ Close() error }); ok {
+		return closer.Close()
+	}
+	return nil
+}
