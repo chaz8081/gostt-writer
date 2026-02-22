@@ -13,15 +13,17 @@ import (
 
 // ClientOptions configures the BLE client behavior.
 type ClientOptions struct {
-	QueueSize    int // max queued messages during disconnect
-	ReconnectMax int // max reconnect backoff in seconds
+	QueueSize       int           // max queued messages during disconnect
+	ReconnectMax    int           // max reconnect backoff in seconds (used by reconnection loop in Task 7)
+	InterChunkDelay time.Duration // delay between BLE write chunks (default 20ms)
 }
 
 // DefaultClientOptions returns sensible defaults.
 func DefaultClientOptions() ClientOptions {
 	return ClientOptions{
-		QueueSize:    64,
-		ReconnectMax: 30,
+		QueueSize:       64,
+		ReconnectMax:    30,
+		InterChunkDelay: 20 * time.Millisecond,
 	}
 }
 
@@ -43,19 +45,26 @@ type Client struct {
 }
 
 // NewClient creates a BLE client for the given paired device.
-func NewClient(adapter Adapter, deviceMAC string, key []byte, opts ClientOptions) *Client {
+// The key must be exactly 32 bytes (AES-256).
+func NewClient(adapter Adapter, deviceMAC string, key []byte, opts ClientOptions) (*Client, error) {
+	if len(key) != 32 {
+		return nil, fmt.Errorf("ble: key must be 32 bytes, got %d", len(key))
+	}
 	if opts.QueueSize <= 0 {
 		opts.QueueSize = 64
 	}
 	if opts.ReconnectMax <= 0 {
 		opts.ReconnectMax = 30
 	}
+	if opts.InterChunkDelay <= 0 {
+		opts.InterChunkDelay = 20 * time.Millisecond
+	}
 	return &Client{
 		adapter:   adapter,
 		deviceMAC: deviceMAC,
 		key:       key,
 		opts:      opts,
-	}
+	}, nil
 }
 
 // Send encrypts and transmits text to the ESP32. If disconnected, the text
@@ -86,7 +95,7 @@ func (c *Client) sendChunked(txChar Characteristic, text string) error {
 		}
 		// Small delay between chunks to avoid overwhelming the ESP32
 		if i < len(chunks)-1 {
-			time.Sleep(20 * time.Millisecond)
+			time.Sleep(c.opts.InterChunkDelay)
 		}
 	}
 	return nil
@@ -132,17 +141,18 @@ func (c *Client) QueueLen() int {
 }
 
 // setConnected sets the connection state (for testing and reconnection).
-func (c *Client) setConnected(conn Connection) {
+// Returns an error if the TX characteristic cannot be discovered.
+func (c *Client) setConnected(conn Connection) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.conn = conn
 	txChar, err := conn.DiscoverCharacteristic(ServiceUUID, TXCharUUID)
 	if err != nil {
-		slog.Error("[BLE] failed to discover TX characteristic", "error", err)
-		return
+		return fmt.Errorf("ble: discover TX characteristic: %w", err)
 	}
 	c.txChar = txChar
 	c.connected = true
+	return nil
 }
 
 // setDisconnected marks the client as disconnected.
@@ -155,6 +165,8 @@ func (c *Client) setDisconnected() {
 }
 
 // flushQueue sends all queued messages. Call after reconnection.
+// Messages that fail to send are logged and dropped — for a keyboard
+// input application, stale keystrokes are less useful than current ones.
 func (c *Client) flushQueue() {
 	c.mu.Lock()
 	if !c.connected || len(c.queue) == 0 {
