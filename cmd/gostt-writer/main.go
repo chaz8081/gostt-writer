@@ -80,7 +80,9 @@ func main() {
 	// Initialize audio recorder
 	recorder, err := audio.NewRecorder(cfg.Audio.SampleRate, cfg.Audio.Channels)
 	if err != nil {
-		transcriber.Close()
+		if err := transcriber.Close(); err != nil {
+			slog.Error("failed to close transcriber", "error", err)
+		}
 		slog.Error("Failed to initialize audio recorder",
 			"error", err,
 			"hint", "Ensure microphone access is granted in System Settings > Privacy & Security > Microphone")
@@ -141,8 +143,12 @@ func main() {
 			if !ok {
 				// Hotkey channel closed, listener stopped
 				slog.Info("Hotkey listener stopped")
-				recorder.Close()
-				transcriber.Close()
+				if err := recorder.Close(); err != nil {
+					slog.Error("failed to close recorder", "error", err)
+				}
+				if err := transcriber.Close(); err != nil {
+					slog.Error("failed to close transcriber", "error", err)
+				}
 				return
 			}
 
@@ -214,10 +220,16 @@ func main() {
 			if recorder.IsRecording() {
 				recorder.Stop()
 			}
-			recorder.Close()
-			transcriber.Close()
+			if err := recorder.Close(); err != nil {
+				slog.Error("failed to close recorder", "error", err)
+			}
+			if err := transcriber.Close(); err != nil {
+				slog.Error("failed to close transcriber", "error", err)
+			}
 			if closer, ok := injector.(interface{ Close() error }); ok {
-				closer.Close()
+				if err := closer.Close(); err != nil {
+					slog.Error("failed to close injector", "error", err)
+				}
 			}
 			slog.Info("Goodbye!")
 			// Exit directly to avoid gohook's C cleanup crash.

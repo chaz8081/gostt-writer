@@ -60,7 +60,7 @@ func Pair(adapter Adapter, deviceMAC string, opts PairOptions) (*PairResult, err
 	if err != nil {
 		return nil, fmt.Errorf("ble: connect for pairing: %w", err)
 	}
-	defer conn.Disconnect()
+	defer func() { _ = conn.Disconnect() }()
 
 	// Discover characteristics
 	txChar, err := conn.DiscoverCharacteristic(ServiceUUID, TXCharUUID)

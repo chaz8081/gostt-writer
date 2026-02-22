@@ -458,8 +458,8 @@ func float16ToFloat32(h uint16) float32 {
 	frac := uint32(h) & 0x3ff
 
 	var f uint32
-	switch {
-	case exp == 0:
+	switch exp {
+	case 0:
 		if frac == 0 {
 			// Zero
 			f = sign << 31
@@ -473,7 +473,7 @@ func float16ToFloat32(h uint16) float32 {
 			frac &= 0x3ff
 			f = (sign << 31) | ((exp + 127 - 15) << 23) | (frac << 13)
 		}
-	case exp == 0x1f:
+	case 0x1f:
 		// Inf/NaN
 		f = (sign << 31) | (0xff << 23) | (frac << 13)
 	default:
@@ -489,15 +489,6 @@ func modelInputNames(m *coreml.Model) []string {
 	names := make([]string, m.InputCount())
 	for i := range names {
 		names[i] = m.InputName(i)
-	}
-	return names
-}
-
-// modelOutputNames returns all output names for a model (sorted alphabetically).
-func modelOutputNames(m *coreml.Model) []string {
-	names := make([]string, m.OutputCount())
-	for i := range names {
-		names[i] = m.OutputName(i)
 	}
 	return names
 }

@@ -55,7 +55,7 @@ func loadBenchSamples(b *testing.B) []benchSampleWithAudio {
 		}
 
 		dec := wavDecode(f)
-		f.Close()
+		_ = f.Close()
 		if dec == nil {
 			b.Fatalf("failed to decode WAV %s", wavPath)
 		}
@@ -96,7 +96,7 @@ func BenchmarkWhisperProcess(b *testing.B) {
 	if err != nil {
 		b.Fatalf("NewWhisperTranscriber: %v", err)
 	}
-	defer tr.Close()
+	defer func() { _ = tr.Close() }()
 
 	for _, s := range samples {
 		s := s // capture
@@ -141,7 +141,7 @@ func BenchmarkParakeetProcess(b *testing.B) {
 	if err != nil {
 		b.Fatalf("NewParakeetTranscriber: %v", err)
 	}
-	defer tr.Close()
+	defer func() { _ = tr.Close() }()
 
 	for _, s := range samples {
 		s := s // capture
@@ -188,7 +188,7 @@ func BenchmarkWhisperLatency(b *testing.B) {
 		b.Skipf("short.wav not found: %v", err)
 	}
 	audio := wavDecode(f)
-	f.Close()
+	_ = f.Close()
 	if audio == nil {
 		b.Fatal("failed to decode short.wav")
 	}
@@ -205,7 +205,7 @@ func BenchmarkWhisperLatency(b *testing.B) {
 		_, err = tr.Process(audio)
 		latency := time.Since(start)
 		if err != nil {
-			tr.Close()
+			_ = tr.Close()
 			b.Fatalf("Process: %v", err)
 		}
 
@@ -229,7 +229,7 @@ func BenchmarkParakeetLatency(b *testing.B) {
 		b.Skipf("short.wav not found: %v", err)
 	}
 	audio := wavDecode(f)
-	f.Close()
+	_ = f.Close()
 	if audio == nil {
 		b.Fatal("failed to decode short.wav")
 	}

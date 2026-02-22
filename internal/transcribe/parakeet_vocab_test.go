@@ -10,7 +10,9 @@ func TestLoadVocabulary(t *testing.T) {
 	vocabJSON := `{"0": "▁the", "1": "▁a", "2": "s", "1024": "<blank>"}`
 	tmpDir := t.TempDir()
 	vocabPath := filepath.Join(tmpDir, "parakeet_vocab.json")
-	os.WriteFile(vocabPath, []byte(vocabJSON), 0644)
+	if err := os.WriteFile(vocabPath, []byte(vocabJSON), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 
 	vocab, err := loadVocabulary(vocabPath)
 	if err != nil {
@@ -37,7 +39,9 @@ func TestLoadVocabularyBadPath(t *testing.T) {
 func TestLoadVocabularyBadJSON(t *testing.T) {
 	tmpDir := t.TempDir()
 	vocabPath := filepath.Join(tmpDir, "bad.json")
-	os.WriteFile(vocabPath, []byte("not json"), 0644)
+	if err := os.WriteFile(vocabPath, []byte("not json"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 
 	_, err := loadVocabulary(vocabPath)
 	if err == nil {

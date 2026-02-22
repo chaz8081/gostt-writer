@@ -28,7 +28,11 @@ func TestRecorderNotRecordingByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRecorder() error = %v", err)
 	}
-	defer r.Close()
+	defer func() {
+		if err := r.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	}()
 
 	if r.IsRecording() {
 		t.Error("IsRecording() should be false after creation")
@@ -40,7 +44,11 @@ func TestStopWithoutStart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRecorder() error = %v", err)
 	}
-	defer r.Close()
+	defer func() {
+		if err := r.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	}()
 
 	samples := r.Stop()
 	if samples != nil {

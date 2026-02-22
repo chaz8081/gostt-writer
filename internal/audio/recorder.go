@@ -13,7 +13,6 @@ import (
 type Recorder struct {
 	ctx        *malgo.AllocatedContext
 	device     *malgo.Device
-	deviceCfg  malgo.DeviceConfig
 	sampleRate uint32
 	channels   uint32
 

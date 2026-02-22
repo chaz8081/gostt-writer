@@ -208,11 +208,12 @@ func (c *Client) Close() error {
 		slog.Warn("[BLE] closing with unsent messages", "count", len(c.queue))
 	}
 
+	var disconnectErr error
 	if c.conn != nil {
-		c.conn.Disconnect()
+		disconnectErr = c.conn.Disconnect()
 	}
 	c.connected = false
-	return nil
+	return disconnectErr
 }
 
 // backoffDelay returns the reconnection delay for attempt n, capped at maxSeconds.

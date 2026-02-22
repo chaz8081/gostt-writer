@@ -39,7 +39,7 @@ func (a *CoreBluetoothAdapter) Enable() error {
 		if connected {
 			return
 		}
-		id := device.Address.UUID.String()
+		id := device.Address.String()
 		a.mu.Lock()
 		conn, ok := a.connections[id]
 		if ok {
@@ -68,7 +68,7 @@ func (a *CoreBluetoothAdapter) Scan(ctx context.Context, serviceUUID string) ([]
 	go func() {
 		select {
 		case <-ctx.Done():
-			a.adapter.StopScan()
+			_ = a.adapter.StopScan()
 		case <-done:
 		}
 	}()
@@ -120,7 +120,7 @@ func (a *CoreBluetoothAdapter) Connect(ctx context.Context, mac string) (Connect
 			// ctx was cancelled; caller already returned.
 			// Clean up the connection we just established.
 			if err == nil {
-				device.Disconnect()
+				_ = device.Disconnect()
 			}
 		}
 	}()
@@ -140,7 +140,7 @@ func (a *CoreBluetoothAdapter) Connect(ctx context.Context, mac string) (Connect
 		// can find it and fire its OnDisconnect callback.
 		// Use the canonical UUID string from the device for key consistency
 		// with the disconnect handler's device.Address.UUID.String().
-		id := result.device.Address.UUID.String()
+		id := result.device.Address.String()
 		a.mu.Lock()
 		a.connections[id] = conn
 		a.mu.Unlock()
