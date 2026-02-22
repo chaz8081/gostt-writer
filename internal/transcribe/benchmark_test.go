@@ -210,7 +210,7 @@ func BenchmarkWhisperLatency(b *testing.B) {
 		}
 
 		b.StopTimer()
-		tr.Close()
+		_ = tr.Close()
 		b.ReportMetric(float64(latency.Milliseconds()), "first-call-ms")
 	}
 }
@@ -246,12 +246,12 @@ func BenchmarkParakeetLatency(b *testing.B) {
 		_, err = tr.Process(audio)
 		latency := time.Since(start)
 		if err != nil {
-			tr.Close()
+			_ = tr.Close()
 			b.Fatalf("Process: %v", err)
 		}
 
 		b.StopTimer()
-		tr.Close()
+		_ = tr.Close()
 		b.ReportMetric(float64(latency.Milliseconds()), "first-call-ms")
 	}
 }

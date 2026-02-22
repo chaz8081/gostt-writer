@@ -62,7 +62,7 @@ func TestNewParakeetTranscriber(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewParakeetTranscriber: %v", err)
 	}
-	defer tr.Close()
+	defer func() { _ = tr.Close() }()
 }
 
 func TestParakeetProcessJFK(t *testing.T) {
@@ -75,7 +75,7 @@ func TestParakeetProcessJFK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewParakeetTranscriber: %v", err)
 	}
-	defer tr.Close()
+	defer func() { _ = tr.Close() }()
 
 	// Debug: run preprocessor manually
 	padded := padAudio(samples, parakeetMaxSamples)

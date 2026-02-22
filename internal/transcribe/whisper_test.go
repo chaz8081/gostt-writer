@@ -51,7 +51,7 @@ func loadWAVSamples(t *testing.T, wavPath string) []float32 {
 	if err != nil {
 		t.Skipf("WAV file not found at %s: %v", wavPath, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	dec := wav.NewDecoder(f)
 	buf, err := dec.FullPCMBuffer()
@@ -99,7 +99,7 @@ func TestWhisperProcessJFK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWhisperTranscriber: %v", err)
 	}
-	defer tr.Close()
+	defer func() { _ = tr.Close() }()
 
 	text, err := tr.Process(samples)
 	if err != nil {
@@ -119,7 +119,7 @@ func TestWhisperProcessEmptyAudio(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWhisperTranscriber: %v", err)
 	}
-	defer tr.Close()
+	defer func() { _ = tr.Close() }()
 
 	// Empty/silent audio should not error, just return empty-ish text
 	silence := make([]float32, 16000) // 1 second of silence
