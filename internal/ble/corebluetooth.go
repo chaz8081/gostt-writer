@@ -42,9 +42,12 @@ func (a *CoreBluetoothAdapter) Enable() error {
 		id := device.Address.UUID.String()
 		a.mu.Lock()
 		conn, ok := a.connections[id]
+		if ok {
+			delete(a.connections, id) // remove stale entry
+		}
 		a.mu.Unlock()
-		if ok && conn.disconnectCb != nil {
-			conn.disconnectCb()
+		if ok {
+			conn.fireDisconnect()
 		}
 	})
 
@@ -107,16 +110,25 @@ func (a *CoreBluetoothAdapter) Connect(ctx context.Context, mac string) (Connect
 		device bluetooth.Device
 		err    error
 	}
-	ch := make(chan connectResult, 1)
+	ch := make(chan connectResult)
 	go func() {
 		device, err := a.adapter.Connect(addr, bluetooth.ConnectionParams{})
-		ch <- connectResult{device, err}
+		select {
+		case ch <- connectResult{device, err}:
+			// caller received the result
+		default:
+			// ctx was cancelled; caller already returned.
+			// Clean up the connection we just established.
+			if err == nil {
+				device.Disconnect()
+			}
+		}
 	}()
 
 	select {
 	case <-ctx.Done():
 		// Context cancelled. The underlying Connect will eventually time out
-		// or succeed. We can't cancel it from here, but we return immediately.
+		// or succeed. The goroutine cleans up any connection it establishes.
 		return nil, fmt.Errorf("ble: connect to %s: %w", mac, ctx.Err())
 	case result := <-ch:
 		if result.err != nil {
@@ -126,8 +138,11 @@ func (a *CoreBluetoothAdapter) Connect(ctx context.Context, mac string) (Connect
 
 		// Track this connection so the adapter-level disconnect handler
 		// can find it and fire its OnDisconnect callback.
+		// Use the canonical UUID string from the device for key consistency
+		// with the disconnect handler's device.Address.UUID.String().
+		id := result.device.Address.UUID.String()
 		a.mu.Lock()
-		a.connections[mac] = conn
+		a.connections[id] = conn
 		a.mu.Unlock()
 
 		return conn, nil
@@ -138,8 +153,20 @@ func (a *CoreBluetoothAdapter) Connect(ctx context.Context, mac string) (Connect
 var _ Adapter = (*CoreBluetoothAdapter)(nil)
 
 type coreBluetoothConnection struct {
-	device       *bluetooth.Device
+	device *bluetooth.Device
+
+	mu           sync.Mutex
 	disconnectCb func()
+}
+
+// fireDisconnect invokes the disconnect callback if set. Thread-safe.
+func (c *coreBluetoothConnection) fireDisconnect() {
+	c.mu.Lock()
+	cb := c.disconnectCb
+	c.mu.Unlock()
+	if cb != nil {
+		cb()
+	}
 }
 
 func (c *coreBluetoothConnection) DiscoverCharacteristic(serviceUUID, charUUID string) (Characteristic, error) {
@@ -176,6 +203,8 @@ func (c *coreBluetoothConnection) Disconnect() error {
 }
 
 func (c *coreBluetoothConnection) OnDisconnect(cb func()) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.disconnectCb = cb
 }
 
