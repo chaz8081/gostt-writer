@@ -254,3 +254,29 @@ tasks:
     cmds:
       - ./{{.BINARY}} --ble-pair
     interactive: true
+
+  fw-build:
+    desc: Build ESP32-S3 firmware
+    dir: firmware/esp32
+    cmds:
+      - idf.py build
+
+  fw-flash:
+    desc: Flash firmware to connected ESP32-S3
+    dir: firmware/esp32
+    cmds:
+      - idf.py -p {{.CLI_ARGS | default "/dev/cu.usbmodem*"}} flash
+
+  fw-monitor:
+    desc: Serial monitor for ESP32-S3
+    dir: firmware/esp32
+    interactive: true
+    cmds:
+      - idf.py -p {{.CLI_ARGS | default "/dev/cu.usbmodem*"}} monitor
+
+  fw-flash-monitor:
+    desc: Flash firmware and open serial monitor
+    dir: firmware/esp32
+    interactive: true
+    cmds:
+      - idf.py -p {{.CLI_ARGS | default "/dev/cu.usbmodem*"}} flash monitor
