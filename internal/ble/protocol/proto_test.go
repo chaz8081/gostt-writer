@@ -34,22 +34,59 @@ func TestMarshalDataPacket(t *testing.T) {
 	encrypted := []byte{0x01, 0x02, 0x03}
 	packetNum := uint32(42)
 
-	got := MarshalDataPacket(iv, tag, encrypted, packetNum)
-
-	// Verify it starts with field 1 tag (0x0a) and length 12
-	if len(got) < 2 || got[0] != 0x0a || got[1] != 12 {
-		t.Errorf("DataPacket field 1 header: got %x, want 0a0c", got[:2])
+	got, err := MarshalDataPacket(iv, tag, encrypted, packetNum)
+	if err != nil {
+		t.Fatalf("MarshalDataPacket() error = %v", err)
 	}
 
-	// Just verify round-trip-ish: the packet should contain our iv, tag, encrypted data
-	if !bytes.Contains(got, iv) {
-		t.Error("DataPacket does not contain IV")
+	// Build the exact expected byte sequence:
+	// Field 1 (iv):        tag=0x0a, len=0x0c, 12 bytes (0xAA followed by 11 zeros)
+	// Field 2 (tag):       tag=0x12, len=0x10, 16 bytes (0xBB followed by 15 zeros)
+	// Field 3 (encrypted): tag=0x1a, len=0x03, 3 bytes
+	// Field 4 (packetNum): tag=0x20, varint=0x2a (42)
+	var want []byte
+	want = append(want, 0x0a, 0x0c)
+	want = append(want, iv...)
+	want = append(want, 0x12, 0x10)
+	want = append(want, tag...)
+	want = append(want, 0x1a, 0x03)
+	want = append(want, encrypted...)
+	want = append(want, 0x20, 0x2a) // field 4 tag + varint 42
+
+	if !bytes.Equal(got, want) {
+		t.Errorf("MarshalDataPacket() =\n  got  %x\n  want %x", got, want)
 	}
-	if !bytes.Contains(got, tag) {
-		t.Error("DataPacket does not contain tag")
+}
+
+func TestMarshalDataPacketValidation(t *testing.T) {
+	validIV := make([]byte, 12)
+	validTag := make([]byte, 16)
+	encrypted := []byte{0x01}
+
+	// Wrong IV length
+	_, err := MarshalDataPacket(make([]byte, 10), validTag, encrypted, 0)
+	if err == nil {
+		t.Error("expected error for wrong IV length")
 	}
-	if !bytes.Contains(got, encrypted) {
-		t.Error("DataPacket does not contain encrypted data")
+
+	// Wrong tag length
+	_, err = MarshalDataPacket(validIV, make([]byte, 8), encrypted, 0)
+	if err == nil {
+		t.Error("expected error for wrong tag length")
+	}
+}
+
+func TestMarshalEncryptedData(t *testing.T) {
+	inner := []byte{0x0a, 0x05, 'h', 'e', 'l', 'l', 'o', 0x10, 0x05}
+	got := MarshalEncryptedData(inner)
+
+	// Should wrap inner as field 1 (bytes): tag=0x0a, length, then inner bytes
+	var want []byte
+	want = append(want, 0x0a, byte(len(inner)))
+	want = append(want, inner...)
+
+	if !bytes.Equal(got, want) {
+		t.Errorf("MarshalEncryptedData() =\n  got  %x\n  want %x", got, want)
 	}
 }
 
@@ -79,5 +116,25 @@ func TestUnmarshalResponsePacketInvalid(t *testing.T) {
 	_, err := UnmarshalResponsePacket([]byte{0xFF})
 	if err == nil {
 		t.Error("expected error for invalid protobuf")
+	}
+}
+
+func TestUnmarshalResponsePacketNilAndEmpty(t *testing.T) {
+	// nil input should return zero-valued packet with no error
+	resp, err := UnmarshalResponsePacket(nil)
+	if err != nil {
+		t.Fatalf("UnmarshalResponsePacket(nil) error = %v", err)
+	}
+	if resp.Type != 0 || resp.PeerStatus != 0 || resp.Data != nil {
+		t.Errorf("UnmarshalResponsePacket(nil) = %+v, want zero-valued", resp)
+	}
+
+	// empty input should return zero-valued packet with no error
+	resp, err = UnmarshalResponsePacket([]byte{})
+	if err != nil {
+		t.Fatalf("UnmarshalResponsePacket([]byte{}) error = %v", err)
+	}
+	if resp.Type != 0 || resp.PeerStatus != 0 || resp.Data != nil {
+		t.Errorf("UnmarshalResponsePacket([]byte{}) = %+v, want zero-valued", resp)
 	}
 }

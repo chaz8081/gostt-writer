@@ -1,3 +1,4 @@
+// Package protocol implements protobuf encoding for the ToothPaste BLE protocol.
 package protocol
 
 import (
@@ -61,7 +62,13 @@ func MarshalEncryptedData(keyboardPacket []byte) []byte {
 //	field 2 (bytes): tag (16 bytes)
 //	field 3 (bytes): encrypted data
 //	field 4 (uint32): packet_num
-func MarshalDataPacket(iv, tag, encrypted []byte, packetNum uint32) []byte {
+func MarshalDataPacket(iv, tag, encrypted []byte, packetNum uint32) ([]byte, error) {
+	if len(iv) != 12 {
+		return nil, fmt.Errorf("protocol: iv must be 12 bytes, got %d", len(iv))
+	}
+	if len(tag) != 16 {
+		return nil, fmt.Errorf("protocol: tag must be 16 bytes, got %d", len(tag))
+	}
 	var buf []byte
 	// Field 1: iv
 	buf = append(buf, 0x0a)
@@ -78,17 +85,20 @@ func MarshalDataPacket(iv, tag, encrypted []byte, packetNum uint32) []byte {
 	// Field 4: packet_num
 	buf = append(buf, 0x20)
 	buf = appendVarint(buf, uint64(packetNum))
-	return buf
+	return buf, nil
 }
 
 // UnmarshalResponsePacket decodes a ResponsePacket from raw protobuf bytes.
 func UnmarshalResponsePacket(data []byte) (*ResponsePacket, error) {
 	resp := &ResponsePacket{}
 	for len(data) > 0 {
-		tagByte := data[0]
-		fieldNum := tagByte >> 3
-		wireType := tagByte & 0x07
-		data = data[1:]
+		tag, n, err := readVarint(data)
+		if err != nil {
+			return nil, fmt.Errorf("protocol: reading tag: %w", err)
+		}
+		data = data[n:]
+		fieldNum := uint8(tag >> 3)
+		wireType := uint8(tag & 0x07)
 
 		switch wireType {
 		case 0: // varint
