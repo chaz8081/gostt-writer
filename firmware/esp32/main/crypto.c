@@ -12,6 +12,7 @@
 #include "mbedtls/hkdf.h"
 #include "mbedtls/md.h"
 #include "mbedtls/gcm.h"
+#include "mbedtls/platform_util.h"
 
 #include <string.h>
 
@@ -82,6 +83,7 @@ int gostt_crypto_pair(gostt_crypto_ctx_t *ctx,
     mbedtls_ecdh_context ecdh;
     mbedtls_entropy_context entropy;
     mbedtls_ctr_drbg_context ctr_drbg;
+    uint8_t shared_secret[32];
 
     mbedtls_ecdh_init(&ecdh);
     mbedtls_entropy_init(&entropy);
@@ -138,7 +140,6 @@ int gostt_crypto_pair(gostt_crypto_ctx_t *ctx,
     }
 
     // Compute shared secret
-    uint8_t shared_secret[32];
     {
         mbedtls_mpi z;
         mbedtls_mpi_init(&z);
@@ -183,10 +184,8 @@ int gostt_crypto_pair(gostt_crypto_ctx_t *ctx,
     ESP_LOGI(TAG, "Pairing complete — AES key derived and stored");
     ret = 0;
 
-    // Clear shared secret from stack
-    memset(shared_secret, 0, sizeof(shared_secret));
-
 cleanup:
+    mbedtls_platform_zeroize(shared_secret, sizeof(shared_secret));
     mbedtls_ecdh_free(&ecdh);
     mbedtls_ctr_drbg_free(&ctr_drbg);
     mbedtls_entropy_free(&entropy);
