@@ -6,6 +6,7 @@ WHISPER_BUILD := $(WHISPER_DIR)/build_go
 MODELS_DIR := models
 BIN_DIR := bin
 BINARY := $(BIN_DIR)/gostt-writer
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 
 # whisper.cpp paths (match the Go bindings Makefile conventions)
 INCLUDE_PATH := $(abspath $(WHISPER_DIR)/include):$(abspath $(WHISPER_DIR)/ggml/include)
@@ -58,7 +59,7 @@ build:
 	C_INCLUDE_PATH=$(INCLUDE_PATH) \
 	LIBRARY_PATH=$(LIBRARY_PATH_DARWIN) \
 	GGML_METAL_PATH_RESOURCES=$(GGML_METAL_PATH_RESOURCES) \
-	go build -ldflags "-extldflags '-framework Foundation -framework Metal -framework MetalKit -lggml-metal -lggml-blas'" \
+	go build -ldflags "-X main.version=$(VERSION) -extldflags '-framework Foundation -framework Metal -framework MetalKit -lggml-metal -lggml-blas'" \
 		-o $(BINARY) ./cmd/gostt-writer
 	@echo "Built $(BINARY)"
 

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -135,4 +136,46 @@ func expandTilde(path string) string {
 		return path
 	}
 	return filepath.Join(home, path[1:])
+}
+
+// WriteDefault creates the default config file with documented defaults.
+// It creates the parent directory if needed. Returns the path written to.
+// If the file already exists, it returns ("", nil) without overwriting.
+func WriteDefault() (string, error) {
+	path := DefaultConfigPath()
+	if _, err := os.Stat(path); err == nil {
+		return "", nil // already exists
+	}
+
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("creating config dir %s: %w", dir, err)
+	}
+
+	cfg := Default()
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return "", fmt.Errorf("marshaling default config: %w", err)
+	}
+
+	header := "# gostt-writer configuration\n# See config.example.yaml for documentation\n\n"
+	if err := os.WriteFile(path, []byte(header+string(data)), 0644); err != nil {
+		return "", fmt.Errorf("writing config file: %w", err)
+	}
+
+	return path, nil
+}
+
+// ParseLogLevel converts a log level string to a slog.Level.
+func ParseLogLevel(level string) slog.Level {
+	switch level {
+	case "debug":
+		return slog.LevelDebug
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default: // "info"
+		return slog.LevelInfo
+	}
 }

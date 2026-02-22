@@ -1,9 +1,13 @@
 package config
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestDefault(t *testing.T) {
@@ -167,6 +171,108 @@ func TestValidate(t *testing.T) {
 			err := cfg.Validate()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestWriteDefault_CreatesFile(t *testing.T) {
+	// Use a temp dir as fake home to avoid touching real config
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	path, err := WriteDefault()
+	if err != nil {
+		t.Fatalf("WriteDefault() error = %v", err)
+	}
+
+	expectedDir := filepath.Join(tmpHome, ".config", "gostt-writer")
+	expectedPath := filepath.Join(expectedDir, "config.yaml")
+
+	if path != expectedPath {
+		t.Errorf("WriteDefault() path = %q, want %q", path, expectedPath)
+	}
+
+	// Verify file exists and contains valid YAML
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read written config: %v", err)
+	}
+
+	content := string(data)
+
+	// Should have a header comment
+	if !strings.HasPrefix(content, "# gostt-writer") {
+		t.Error("written config should start with header comment")
+	}
+
+	// Should be valid YAML that parses into a Config
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("written config is not valid YAML: %v", err)
+	}
+
+	// Values should match defaults
+	if cfg.Hotkey.Mode != "hold" {
+		t.Errorf("written config Hotkey.Mode = %q, want %q", cfg.Hotkey.Mode, "hold")
+	}
+	if cfg.Audio.SampleRate != 16000 {
+		t.Errorf("written config Audio.SampleRate = %d, want 16000", cfg.Audio.SampleRate)
+	}
+}
+
+func TestWriteDefault_NoOpIfExists(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	// Create config dir and file manually first
+	configDir := filepath.Join(tmpHome, ".config", "gostt-writer")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatalf("failed to create config dir: %v", err)
+	}
+	existingContent := []byte("model_path: /custom/model.bin\n")
+	configPath := filepath.Join(configDir, "config.yaml")
+	if err := os.WriteFile(configPath, existingContent, 0644); err != nil {
+		t.Fatalf("failed to write existing config: %v", err)
+	}
+
+	// WriteDefault should return ("", nil) without overwriting
+	path, err := WriteDefault()
+	if err != nil {
+		t.Fatalf("WriteDefault() error = %v", err)
+	}
+	if path != "" {
+		t.Errorf("WriteDefault() path = %q, want empty string for existing file", path)
+	}
+
+	// Verify the original content is untouched
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("failed to read config: %v", err)
+	}
+	if string(data) != string(existingContent) {
+		t.Error("WriteDefault() should not overwrite existing config file")
+	}
+}
+
+func TestParseLogLevel(t *testing.T) {
+	tests := []struct {
+		input string
+		want  slog.Level
+	}{
+		{"debug", slog.LevelDebug},
+		{"info", slog.LevelInfo},
+		{"warn", slog.LevelWarn},
+		{"error", slog.LevelError},
+		{"unknown", slog.LevelInfo}, // defaults to info
+		{"", slog.LevelInfo},        // defaults to info
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := ParseLogLevel(tt.input)
+			if got != tt.want {
+				t.Errorf("ParseLogLevel(%q) = %v, want %v", tt.input, got, tt.want)
 			}
 		})
 	}
