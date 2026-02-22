@@ -91,6 +91,60 @@ tasks:
         echo "Installed gostt-writer to {{.INSTALL_DIR}}/gostt-writer"
     interactive: true
 
+  backend:
+    desc: Switch the active transcription backend in your config
+    vars:
+      CONFIG_PATH:
+        sh: echo "${HOME}/.config/gostt-writer/config.yaml"
+    cmds:
+      - |
+        CONFIG="{{.CONFIG_PATH}}"
+
+        if [ ! -f "$CONFIG" ]; then
+          echo "Config not found at $CONFIG"
+          echo "Run gostt-writer once to generate the default config, or create it manually."
+          exit 1
+        fi
+
+        # Show current backend
+        if grep -q '^transcribe:' "$CONFIG"; then
+          CURRENT=$(awk '/^transcribe:/{found=1} found && /backend:/{gsub(/.*backend:[[:space:]]*/, ""); gsub(/["\x27]/, ""); print; exit}' "$CONFIG")
+        fi
+        CURRENT="${CURRENT:-whisper}"
+        echo ""
+        echo "Current backend: $CURRENT"
+        echo ""
+        echo "Which backend would you like to use?"
+        echo "  [1] whisper  - CPU/GPU via Metal"
+        echo "  [2] parakeet - Apple Neural Engine via CoreML"
+        echo ""
+        printf "Choose [1/2]: "
+        read -r choice
+
+        case "$choice" in
+          1) NEW="whisper" ;;
+          2) NEW="parakeet" ;;
+          *)
+            echo "Invalid choice: $choice"
+            exit 1
+            ;;
+        esac
+
+        if [ "$NEW" = "$CURRENT" ]; then
+          echo "Already using $NEW, no change needed."
+          exit 0
+        fi
+
+        # Update or add the transcribe.backend value
+        if grep -q '^transcribe:' "$CONFIG"; then
+          sed -i.bak "s/^\([[:space:]]*backend:[[:space:]]*\).*/\1$NEW/" "$CONFIG" && rm -f "$CONFIG.bak"
+        else
+          printf "\ntranscribe:\n  backend: %s\n" "$NEW" >> "$CONFIG"
+        fi
+        echo "Switched backend from $CURRENT to $NEW."
+        echo "Restart gostt-writer for the change to take effect."
+    interactive: true
+
   whisper:
     desc: Build whisper.cpp static library (Metal + Accelerate)
     preconditions:

@@ -183,7 +183,11 @@ To use Parakeet:
    ```bash
    task parakeet-model
    ```
-2. Set the backend in your config (`~/.config/gostt-writer/config.yaml`):
+2. Switch the backend:
+   ```bash
+   task backend
+   ```
+   Or edit your config manually (`~/.config/gostt-writer/config.yaml`):
    ```yaml
    transcribe:
      backend: parakeet
@@ -197,6 +201,7 @@ Run `task --list` to see all available tasks:
 | --------------------- | -------------------------------------------------------- |
 | `task`                | Build everything (whisper.cpp + model + binary)          |
 | `task install`        | Build, download models, and install to /usr/local/bin    |
+| `task backend`        | Switch the active transcription backend in your config   |
 | `task build`          | Build the gostt-writer binary                            |
 | `task run`            | Build and run gostt-writer                               |
 | `task test`           | Run all tests                                            |
