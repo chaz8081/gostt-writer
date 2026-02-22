@@ -21,7 +21,7 @@ static const char *TAG = "gostt-ble";
 static gostt_ble_config_t s_config;
 static uint16_t s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static uint16_t s_resp_attr_handle;
-static bool s_connected = false;
+static volatile bool s_connected = false;
 static TimerHandle_t s_keepalive_timer = NULL;
 
 // Forward declarations
@@ -139,7 +139,11 @@ static int mac_char_read_cb(uint16_t conn_handle, uint16_t attr_handle,
     (void)conn_handle; (void)attr_handle; (void)arg;
 
     uint8_t mac[6];
-    ble_hs_id_copy_addr(BLE_ADDR_PUBLIC, mac, NULL);
+    int rc = ble_hs_id_copy_addr(BLE_ADDR_PUBLIC, mac, NULL);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "Failed to read MAC address: %d", rc);
+        return BLE_ATT_ERR_UNLIKELY;
+    }
     os_mbuf_append(ctxt->om, mac, sizeof(mac));
     return 0;
 }
@@ -195,7 +199,12 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
 static void keepalive_timer_cb(TimerHandle_t timer)
 {
     (void)timer;
-    if (s_conn_handle == BLE_HS_CONN_HANDLE_NONE) return;
+
+    ble_hs_lock();
+    uint16_t conn = s_conn_handle;
+    ble_hs_unlock();
+
+    if (conn == BLE_HS_CONN_HANDLE_NONE) return;
 
     uint8_t buf[16];
     int len = gostt_encode_response_packet(buf, sizeof(buf),
@@ -203,10 +212,12 @@ static void keepalive_timer_cb(TimerHandle_t timer)
                                             GOSTT_PEER_UNKNOWN,
                                             NULL, 0);
     if (len > 0) {
+        ble_hs_lock();
         struct os_mbuf *om = ble_hs_mbuf_from_flat(buf, len);
         if (om) {
-            ble_gatts_notify_custom(s_conn_handle, s_resp_attr_handle, om);
+            ble_gatts_notify_custom(conn, s_resp_attr_handle, om);
         }
+        ble_hs_unlock();
     }
 }
 
@@ -224,7 +235,11 @@ static void start_advertising(void)
     fields.name_len = strlen(GOSTT_BLE_DEVICE_NAME);
     fields.name_is_complete = 1;
 
-    ble_gap_adv_set_fields(&fields);
+    int rc = ble_gap_adv_set_fields(&fields);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "ble_gap_adv_set_fields failed: %d", rc);
+        gostt_led_flash_error();
+    }
 
     // Advertise service UUID in scan response
     struct ble_hs_adv_fields rsp_fields = {0};
@@ -234,10 +249,19 @@ static void start_advertising(void)
     }};
     rsp_fields.num_uuids128 = 1;
     rsp_fields.uuids128_is_complete = 1;
-    ble_gap_adv_rsp_set_fields(&rsp_fields);
+    rc = ble_gap_adv_rsp_set_fields(&rsp_fields);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "ble_gap_adv_rsp_set_fields failed: %d", rc);
+        gostt_led_flash_error();
+    }
 
-    ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER,
-                      &adv_params, ble_gap_event, NULL);
+    rc = ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER,
+                           &adv_params, ble_gap_event, NULL);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "ble_gap_adv_start failed: %d", rc);
+        gostt_led_flash_error();
+        return;
+    }
 
     ESP_LOGI(TAG, "Advertising started as '%s'", GOSTT_BLE_DEVICE_NAME);
     gostt_led_set(GOSTT_LED_ADVERTISING);

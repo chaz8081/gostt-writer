@@ -2,6 +2,7 @@
 #ifndef GOSTT_KBD_BLE_SERVER_H
 #define GOSTT_KBD_BLE_SERVER_H
 
+#include <stdbool.h>
 #include "crypto.h"
 
 // Callback for when decrypted text is ready to type.
