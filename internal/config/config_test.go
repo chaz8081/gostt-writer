@@ -439,14 +439,25 @@ func TestValidateBLEMethodWithPairing(t *testing.T) {
 	}
 }
 
-func TestValidateBLEBadSharedSecret(t *testing.T) {
+func TestValidateBLEBadSharedSecretTooShort(t *testing.T) {
 	cfg := Default()
 	cfg.Inject.Method = "ble"
 	cfg.Inject.BLE.DeviceMAC = "AA:BB:CC:DD:EE:FF"
 	cfg.Inject.BLE.SharedSecret = "not-hex"
 	err := cfg.Validate()
 	if err == nil {
-		t.Error("Validate() should fail for non-hex shared_secret")
+		t.Error("Validate() should fail for too-short shared_secret")
+	}
+}
+
+func TestValidateBLEBadSharedSecretInvalidHex(t *testing.T) {
+	cfg := Default()
+	cfg.Inject.Method = "ble"
+	cfg.Inject.BLE.DeviceMAC = "AA:BB:CC:DD:EE:FF"
+	cfg.Inject.BLE.SharedSecret = strings.Repeat("zz", 32) // 64 chars, but 'z' is invalid hex
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Validate() should fail for invalid hex shared_secret")
 	}
 }
 
