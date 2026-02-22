@@ -213,6 +213,26 @@ func (t *Tensor) Dim(axis int) int64 {
 	return int64(C.coreml_tensor_dim(t.handle, C.int(axis)))
 }
 
+// Stride returns the stride of the given dimension.
+func (t *Tensor) Stride(axis int) int64 {
+	return int64(C.coreml_tensor_stride(t.handle, C.int(axis)))
+}
+
+// Strides returns all strides as a slice.
+func (t *Tensor) Strides() []int64 {
+	rank := t.Rank()
+	strides := make([]int64, rank)
+	for i := 0; i < rank; i++ {
+		strides[i] = t.Stride(i)
+	}
+	return strides
+}
+
+// IsContiguous returns true if the tensor has contiguous (row-major) memory layout.
+func (t *Tensor) IsContiguous() bool {
+	return bool(C.coreml_tensor_is_contiguous(t.handle))
+}
+
 // Shape returns the shape as a slice.
 func (t *Tensor) Shape() []int64 {
 	rank := t.Rank()
@@ -317,4 +337,106 @@ func (m *Model) Predict(inputNames []string, inputs []*Tensor, outputNames []str
 	}
 
 	return nil
+}
+
+// PredictAllocResult holds the outputs from PredictAlloc.
+type PredictAllocResult struct {
+	Names   []string
+	Tensors []*Tensor
+}
+
+// Close releases all output tensors.
+func (r *PredictAllocResult) Close() {
+	for _, t := range r.Tensors {
+		t.Close()
+	}
+}
+
+// Tensor returns the tensor with the given name, or nil if not found.
+func (r *PredictAllocResult) Tensor(name string) *Tensor {
+	for i, n := range r.Names {
+		if n == name {
+			return r.Tensors[i]
+		}
+	}
+	return nil
+}
+
+// PredictAlloc runs inference and returns bridge-allocated output tensors.
+// The caller must close the returned result to free resources.
+// Output tensors have the actual shapes from the model's prediction.
+func (m *Model) PredictAlloc(inputNames []string, inputs []*Tensor) (*PredictAllocResult, error) {
+	if len(inputNames) != len(inputs) {
+		return nil, fmt.Errorf("input names count (%d) != inputs count (%d)", len(inputNames), len(inputs))
+	}
+
+	// Convert input names
+	cInputNames := make([]*C.char, len(inputNames))
+	for i, name := range inputNames {
+		cInputNames[i] = C.CString(name)
+	}
+	defer func() {
+		for _, name := range cInputNames {
+			C.free(unsafe.Pointer(name))
+		}
+	}()
+
+	// Convert input tensors
+	cInputs := make([]C.CoreMLTensor, len(inputs))
+	for i, t := range inputs {
+		cInputs[i] = t.handle
+	}
+
+	var cInputNamesPtr **C.char
+	var cInputsPtr *C.CoreMLTensor
+	if len(inputs) > 0 {
+		cInputNamesPtr = (**C.char)(unsafe.Pointer(&cInputNames[0]))
+		cInputsPtr = (*C.CoreMLTensor)(unsafe.Pointer(&cInputs[0]))
+	}
+
+	var cOutputNames **C.char
+	var cOutputs *C.CoreMLTensor
+	var numOutputs C.int
+	var err C.CoreMLError
+
+	ok := C.coreml_model_predict_alloc(
+		m.handle,
+		cInputNamesPtr,
+		cInputsPtr,
+		C.int(len(inputs)),
+		&cOutputNames,
+		&cOutputs,
+		&numOutputs,
+		&err,
+	)
+
+	if !ok {
+		msg := "unknown error"
+		if err.message != nil {
+			msg = C.GoString(err.message)
+			C.free(unsafe.Pointer(err.message))
+		}
+		return nil, fmt.Errorf("prediction failed: %s", msg)
+	}
+
+	n := int(numOutputs)
+	result := &PredictAllocResult{
+		Names:   make([]string, n),
+		Tensors: make([]*Tensor, n),
+	}
+
+	// Convert C arrays to Go
+	cNamesSlice := unsafe.Slice((**C.char)(unsafe.Pointer(cOutputNames)), n)
+	cTensorsSlice := unsafe.Slice((*C.CoreMLTensor)(unsafe.Pointer(cOutputs)), n)
+	for i := 0; i < n; i++ {
+		result.Names[i] = C.GoString(cNamesSlice[i])
+		C.free(unsafe.Pointer(cNamesSlice[i]))
+		result.Tensors[i] = &Tensor{handle: cTensorsSlice[i]}
+	}
+
+	// Free the C arrays themselves (not the contents, which are now owned by Go)
+	C.free(unsafe.Pointer(cOutputNames))
+	C.free(unsafe.Pointer(cOutputs))
+
+	return result, nil
 }

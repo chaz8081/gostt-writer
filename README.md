@@ -1,6 +1,6 @@
 # gostt-writer
 
-Local real-time dictation for macOS. Press a hotkey, speak, and your words are typed into the active application. All processing happens on-device -- nothing is sent to the cloud. Choose between [whisper.cpp](https://github.com/ggerganov/whisper.cpp) (default) or [Parakeet TDT 0.6B v2](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2) via CoreML for Apple Neural Engine acceleration.
+Local real-time dictation for macOS. Press a hotkey, speak, and your words are typed into the active application. All processing happens on-device -- nothing is sent to the cloud. Choose between [whisper.cpp](https://github.com/ggerganov/whisper.cpp) (default) or [Parakeet TDT 0.6B v2](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v2-coreml) via CoreML for Apple Neural Engine acceleration.
 
 ## Prerequisites
 
@@ -33,11 +33,13 @@ make all
 gostt-writer needs two permissions to function:
 
 **Accessibility** (for global hotkey and keystroke injection):
+
 1. Open **System Settings > Privacy & Security > Accessibility**
 2. Click **+** and add your **terminal app** (Terminal.app, iTerm2, Ghostty, etc.)
 3. Toggle it on
 
 **Microphone** (for audio capture):
+
 1. Open **System Settings > Privacy & Security > Microphone**
 2. Add your terminal app if it isn't already listed
 3. Toggle it on
@@ -113,13 +115,13 @@ tmux new-session -d -s gostt 'cd /path/to/gostt-writer && ./bin/gostt-writer'
 
 ### tmux cheat sheet (just the basics)
 
-| Action | Command |
-|---|---|
-| Start a new session | `tmux new-session -d -s gostt '...'` |
-| Attach to session | `tmux attach -t gostt` |
-| Detach (while attached) | `Ctrl+B`, then `D` |
-| List sessions | `tmux ls` |
-| Kill session | `tmux kill-session -t gostt` |
+| Action                  | Command                              |
+| ----------------------- | ------------------------------------ |
+| Start a new session     | `tmux new-session -d -s gostt '...'` |
+| Attach to session       | `tmux attach -t gostt`               |
+| Detach (while attached) | `Ctrl+B`, then `D`                   |
+| List sessions           | `tmux ls`                            |
+| Kill session            | `tmux kill-session -t gostt`         |
 
 ## Configuration
 
@@ -131,15 +133,15 @@ On first run, gostt-writer creates a default config at `~/.config/gostt-writer/c
 
 See [`config.example.yaml`](config.example.yaml) for all options with documentation. The key settings:
 
-| Setting | Default | Description |
-|---|---|---|
-| `transcribe.backend` | `whisper` | `whisper` or `parakeet` |
-| `transcribe.model_path` | `models/ggml-base.en.bin` | Path to whisper model |
-| `transcribe.parakeet_model_dir` | `models/parakeet-tdt-v2` | Path to Parakeet CoreML models |
-| `hotkey.keys` | `["ctrl", "shift", "r"]` | Key combination |
-| `hotkey.mode` | `hold` | `hold` = push-to-talk, `toggle` = press to start/stop |
-| `inject.method` | `type` | `type` = keystrokes, `paste` = clipboard + Cmd+V |
-| `log_level` | `info` | `debug`, `info`, `warn`, or `error` |
+| Setting                         | Default                   | Description                                           |
+| ------------------------------- | ------------------------- | ----------------------------------------------------- |
+| `transcribe.backend`            | `whisper`                 | `whisper` or `parakeet`                               |
+| `transcribe.model_path`         | `models/ggml-base.en.bin` | Path to whisper model                                 |
+| `transcribe.parakeet_model_dir` | `models/parakeet-tdt-v2`  | Path to Parakeet CoreML models                        |
+| `hotkey.keys`                   | `["ctrl", "shift", "r"]`  | Key combination                                       |
+| `hotkey.mode`                   | `hold`                    | `hold` = push-to-talk, `toggle` = press to start/stop |
+| `inject.method`                 | `type`                    | `type` = keystrokes, `paste` = clipboard + Cmd+V      |
+| `log_level`                     | `info`                    | `debug`, `info`, `warn`, or `error`                   |
 
 ## How It Works
 
@@ -160,7 +162,7 @@ No extra setup needed -- `make all` builds whisper.cpp and downloads the model a
 
 ### Parakeet TDT (optional)
 
-[NVIDIA Parakeet TDT 0.6B v2](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2) via CoreML. Runs on the Apple Neural Engine. Achieves ~110x real-time on M4 Max with lower word error rate than whisper base.en.
+[Parakeet TDT 0.6B v2](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v2-coreml) via CoreML. Runs on the Apple Neural Engine. Achieves ~110x real-time on M4 Max with lower word error rate than whisper base.en.
 
 To use Parakeet:
 
@@ -176,17 +178,17 @@ To use Parakeet:
 
 ## Make Targets
 
-| Target | Description |
-|---|---|
-| `make all` | Build everything (whisper + model + binary) |
-| `make build` | Build the gostt-writer binary |
-| `make run` | Build and run |
-| `make test` | Run all tests |
-| `make whisper` | Build whisper.cpp static library |
-| `make model` | Download the whisper model |
-| `make parakeet-model` | Download Parakeet TDT CoreML models |
-| `make clean` | Remove build artifacts |
-| `make help` | Show all targets |
+| Target                | Description                                 |
+| --------------------- | ------------------------------------------- |
+| `make all`            | Build everything (whisper + model + binary) |
+| `make build`          | Build the gostt-writer binary               |
+| `make run`            | Build and run                               |
+| `make test`           | Run all tests                               |
+| `make whisper`        | Build whisper.cpp static library            |
+| `make model`          | Download the whisper model                  |
+| `make parakeet-model` | Download Parakeet TDT CoreML models         |
+| `make clean`          | Remove build artifacts                      |
+| `make help`           | Show all targets                            |
 
 ## Version
 

@@ -47,15 +47,25 @@ void coreml_tensor_free(CoreMLTensor tensor);
 // Tensor access
 int coreml_tensor_rank(CoreMLTensor tensor);
 int64_t coreml_tensor_dim(CoreMLTensor tensor, int axis);
+int64_t coreml_tensor_stride(CoreMLTensor tensor, int axis);
+bool coreml_tensor_is_contiguous(CoreMLTensor tensor);
 int coreml_tensor_dtype(CoreMLTensor tensor);
 void* coreml_tensor_data(CoreMLTensor tensor);
 int64_t coreml_tensor_size_bytes(CoreMLTensor tensor);
 
-// Model execution
+// Model execution — pre-allocated outputs (caller provides output tensors, bridge copies data into them)
 bool coreml_model_predict(CoreMLModel model,
                           const char** input_names, CoreMLTensor* inputs, int num_inputs,
                           const char** output_names, CoreMLTensor* outputs, int num_outputs,
                           CoreMLError* error);
+
+// Model execution — bridge-allocated outputs (bridge creates output tensors from results)
+// output_names_out: array of num_outputs_out char* pointers (caller must free each with free())
+// outputs_out: array of num_outputs_out CoreMLTensor handles (caller must free each with coreml_tensor_free())
+bool coreml_model_predict_alloc(CoreMLModel model,
+                                const char** input_names, CoreMLTensor* inputs, int num_inputs,
+                                char*** output_names_out, CoreMLTensor** outputs_out, int* num_outputs_out,
+                                CoreMLError* error);
 
 // Compute unit configuration
 typedef enum {

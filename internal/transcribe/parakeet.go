@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"path/filepath"
 	"unsafe"
 
 	"github.com/chaz8081/gostt-writer/internal/coreml"
@@ -20,25 +19,17 @@ type ParakeetTranscriber struct {
 	joint        *coreml.Model
 	vocab        []string
 
-	// Cached I/O names discovered via model introspection.
-	// Preprocessor
+	// Cached I/O names discovered via model introspection (sorted alphabetically).
 	prepInputNames  []string
-	prepOutputNames []string
-	// Encoder
-	encInputNames  []string
-	encOutputNames []string
-	// Decoder
-	decInputNames  []string
-	decOutputNames []string
-	// Joint
-	jointInputNames  []string
-	jointOutputNames []string
+	encInputNames   []string
+	decInputNames   []string
+	jointInputNames []string
 }
 
 // NewParakeetTranscriber loads the 4 CoreML models and vocabulary from modelDir.
 func NewParakeetTranscriber(modelDir string) (*ParakeetTranscriber, error) {
 	// Load vocabulary
-	vocabPath := filepath.Join(modelDir, "parakeet_vocab.json")
+	vocabPath := modelDir + "/parakeet_vocab.json"
 	vocab, err := loadVocabulary(vocabPath)
 	if err != nil {
 		return nil, fmt.Errorf("parakeet: %w", err)
@@ -47,27 +38,27 @@ func NewParakeetTranscriber(modelDir string) (*ParakeetTranscriber, error) {
 	// Load CoreML models
 	// Preprocessor runs on CPU (mel spectrogram is faster on CPU)
 	coreml.SetComputeUnits(coreml.ComputeCPUOnly)
-	preprocessor, err := coreml.LoadModel(filepath.Join(modelDir, "Preprocessor.mlmodelc"))
+	preprocessor, err := coreml.LoadModel(modelDir + "/Preprocessor.mlmodelc")
 	if err != nil {
 		return nil, fmt.Errorf("parakeet: load preprocessor: %w", err)
 	}
 
 	// Encoder, decoder, joint run on all units (ANE preferred)
 	coreml.SetComputeUnits(coreml.ComputeAll)
-	encoder, err := coreml.LoadModel(filepath.Join(modelDir, "Encoder.mlmodelc"))
+	encoder, err := coreml.LoadModel(modelDir + "/Encoder.mlmodelc")
 	if err != nil {
 		preprocessor.Close()
 		return nil, fmt.Errorf("parakeet: load encoder: %w", err)
 	}
 
-	decoder, err := coreml.LoadModel(filepath.Join(modelDir, "Decoder.mlmodelc"))
+	decoder, err := coreml.LoadModel(modelDir + "/Decoder.mlmodelc")
 	if err != nil {
 		preprocessor.Close()
 		encoder.Close()
 		return nil, fmt.Errorf("parakeet: load decoder: %w", err)
 	}
 
-	joint, err := coreml.LoadModel(filepath.Join(modelDir, "JointDecision.mlmodelc"))
+	joint, err := coreml.LoadModel(modelDir + "/JointDecision.mlmodelc")
 	if err != nil {
 		preprocessor.Close()
 		encoder.Close()
@@ -83,15 +74,11 @@ func NewParakeetTranscriber(modelDir string) (*ParakeetTranscriber, error) {
 		vocab:        vocab,
 	}
 
-	// Cache I/O names from model introspection
+	// Cache sorted input names from model introspection
 	p.prepInputNames = modelInputNames(preprocessor)
-	p.prepOutputNames = modelOutputNames(preprocessor)
 	p.encInputNames = modelInputNames(encoder)
-	p.encOutputNames = modelOutputNames(encoder)
 	p.decInputNames = modelInputNames(decoder)
-	p.decOutputNames = modelOutputNames(decoder)
 	p.jointInputNames = modelInputNames(joint)
-	p.jointOutputNames = modelOutputNames(joint)
 
 	// Log model I/O for debugging
 	introspectModel("Preprocessor", preprocessor)
@@ -125,29 +112,21 @@ func (p *ParakeetTranscriber) Process(samples []float32) (string, error) {
 	padded := padAudio(samples, parakeetMaxSamples)
 
 	// Step 1: Preprocessor (audio → mel features)
-	prepOutputs, err := p.runPreprocessor(padded)
+	prepResult, err := p.runPreprocessor(padded)
 	if err != nil {
 		return "", fmt.Errorf("parakeet: preprocessor: %w", err)
 	}
-	defer func() {
-		for _, t := range prepOutputs {
-			t.Close()
-		}
-	}()
+	defer prepResult.Close()
 
 	// Step 2: Encoder (mel features → encoder hidden states)
-	encOutputs, err := p.runEncoder(prepOutputs)
+	encResult, err := p.runEncoder(prepResult)
 	if err != nil {
 		return "", fmt.Errorf("parakeet: encoder: %w", err)
 	}
-	defer func() {
-		for _, t := range encOutputs {
-			t.Close()
-		}
-	}()
+	defer encResult.Close()
 
 	// Extract encoder output and length
-	encoderOutput, encoderLength, err := p.extractEncoderOutput(encOutputs)
+	encoderOutput, encoderLength, err := p.extractEncoderOutput(encResult)
 	if err != nil {
 		return "", fmt.Errorf("parakeet: %w", err)
 	}
@@ -166,8 +145,7 @@ func (p *ParakeetTranscriber) Process(samples []float32) (string, error) {
 }
 
 // runPreprocessor runs the preprocessor model on raw audio.
-// Returns output tensors (caller must close them).
-func (p *ParakeetTranscriber) runPreprocessor(audio []float32) ([]*coreml.Tensor, error) {
+func (p *ParakeetTranscriber) runPreprocessor(audio []float32) (*coreml.PredictAllocResult, error) {
 	// Create audio_signal tensor [1, N]
 	audioTensor, err := coreml.NewTensorWithData(
 		[]int64{1, int64(len(audio))},
@@ -191,104 +169,51 @@ func (p *ParakeetTranscriber) runPreprocessor(audio []float32) ([]*coreml.Tensor
 	}
 	defer audioLenTensor.Close()
 
-	// Allocate output tensors — we need to introspect the model to know exact shapes.
-	// The preprocessor outputs mel features. We allocate generously and let CoreML fill them.
-	// For Parakeet TDT, the preprocessor output shape depends on audio length.
-	// With 240000 samples (15s), we expect ~1500 mel frames × 80 features = [1, 80, ~1500].
-	// However, the exact shape is model-specific. We'll pre-allocate and the bridge will
-	// overwrite with actual output data.
-	numOutputs := p.preprocessor.OutputCount()
-	outputs := make([]*coreml.Tensor, numOutputs)
-	for i := range outputs {
-		// Allocate a placeholder that will be populated by Predict.
-		// The CoreML bridge copies output data into these tensors.
-		// We need a reasonable allocation — use a large mel spectrogram buffer.
-		outputs[i], err = coreml.NewTensor([]int64{1, 80, 1500}, coreml.DTypeFloat32)
-		if err != nil {
-			for j := 0; j < i; j++ {
-				outputs[j].Close()
-			}
-			return nil, fmt.Errorf("create output tensor %d: %w", i, err)
-		}
+	// Map tensors to sorted input names
+	inputMap := map[string]*coreml.Tensor{
+		"audio_signal": audioTensor,
+		"audio_length": audioLenTensor,
 	}
-
-	err = p.preprocessor.Predict(
-		p.prepInputNames,
-		[]*coreml.Tensor{audioTensor, audioLenTensor},
-		p.prepOutputNames,
-		outputs,
-	)
+	inputs, err := orderInputs(p.prepInputNames, inputMap)
 	if err != nil {
-		for _, t := range outputs {
-			t.Close()
-		}
-		return nil, fmt.Errorf("predict: %w", err)
+		return nil, err
 	}
 
-	return outputs, nil
+	return p.preprocessor.PredictAlloc(p.prepInputNames, inputs)
 }
 
 // runEncoder runs the encoder model on preprocessor outputs.
-// Returns output tensors (caller must close them).
-func (p *ParakeetTranscriber) runEncoder(prepOutputs []*coreml.Tensor) ([]*coreml.Tensor, error) {
-	// The encoder takes the preprocessor outputs as inputs.
-	// We pass them through using the encoder's input names.
-	numOutputs := p.encoder.OutputCount()
-	outputs := make([]*coreml.Tensor, numOutputs)
-	var err error
-	for i := range outputs {
-		// Encoder output: [1, T, 1024] for encoder hidden states, plus encoder_length.
-		// Allocate generously for the encoder output.
-		if i == 0 {
-			// Main encoder output: [1, T, 1024] — T ≈ 1500 for 15s audio
-			outputs[i], err = coreml.NewTensor([]int64{1, 1500, int64(parakeetEncoderHidden)}, coreml.DTypeFloat32)
-		} else {
-			// encoder_length: scalar or [1]
-			outputs[i], err = coreml.NewTensor([]int64{1}, coreml.DTypeInt32)
-		}
-		if err != nil {
-			for j := 0; j < i; j++ {
-				outputs[j].Close()
-			}
-			return nil, fmt.Errorf("create encoder output tensor %d: %w", i, err)
-		}
+func (p *ParakeetTranscriber) runEncoder(prepResult *coreml.PredictAllocResult) (*coreml.PredictAllocResult, error) {
+	// Map preprocessor outputs to encoder input names
+	inputMap := make(map[string]*coreml.Tensor)
+	for i, name := range prepResult.Names {
+		inputMap[name] = prepResult.Tensors[i]
 	}
-
-	err = p.encoder.Predict(
-		p.encInputNames,
-		prepOutputs,
-		p.encOutputNames,
-		outputs,
-	)
+	inputs, err := orderInputs(p.encInputNames, inputMap)
 	if err != nil {
-		for _, t := range outputs {
-			t.Close()
-		}
-		return nil, fmt.Errorf("predict: %w", err)
+		return nil, err
 	}
 
-	return outputs, nil
+	return p.encoder.PredictAlloc(p.encInputNames, inputs)
 }
 
 // extractEncoderOutput extracts the flattened encoder hidden states and length from encoder outputs.
-func (p *ParakeetTranscriber) extractEncoderOutput(encOutputs []*coreml.Tensor) ([]float32, int, error) {
-	if len(encOutputs) < 2 {
-		return nil, 0, fmt.Errorf("encoder returned %d outputs, need at least 2", len(encOutputs))
-	}
-
-	// Find the encoder output tensor (3D: [1, T, 1024]) and length tensor (1D or scalar)
-	var encoderTensor, lengthTensor *coreml.Tensor
-	for _, t := range encOutputs {
-		if t.Rank() == 3 {
-			encoderTensor = t
-		} else if t.Rank() <= 1 {
-			lengthTensor = t
-		}
-	}
+// The encoder output shape is [1, encoderHidden, T] (not [1, T, encoderHidden]).
+func (p *ParakeetTranscriber) extractEncoderOutput(encResult *coreml.PredictAllocResult) ([]float32, int, error) {
+	encoderTensor := encResult.Tensor("encoder")
+	lengthTensor := encResult.Tensor("encoder_length")
 
 	if encoderTensor == nil {
-		return nil, 0, fmt.Errorf("no 3D encoder output tensor found")
+		return nil, 0, fmt.Errorf("no 'encoder' output tensor found in result (got %v)", encResult.Names)
 	}
+
+	// Encoder output shape: [1, H, T] where H=1024 (or similar)
+	if encoderTensor.Rank() != 3 {
+		return nil, 0, fmt.Errorf("encoder output has rank %d, expected 3", encoderTensor.Rank())
+	}
+
+	H := int(encoderTensor.Dim(1)) // encoder hidden size
+	T := int(encoderTensor.Dim(2)) // number of frames
 
 	// Extract encoder length
 	var encoderLength int
@@ -296,24 +221,33 @@ func (p *ParakeetTranscriber) extractEncoderOutput(encOutputs []*coreml.Tensor) 
 		data := (*int32)(lengthTensor.DataPtr())
 		encoderLength = int(*data)
 	} else {
-		// Fall back to tensor shape
-		encoderLength = int(encoderTensor.Dim(1))
+		encoderLength = T
 	}
 
-	// Copy encoder output to Go slice
-	totalFloats := int(encoderTensor.Dim(1)) * int(encoderTensor.Dim(2))
-	encoderData := make([]float32, totalFloats)
+	slog.Debug("parakeet encoder output", "shape", encoderTensor.Shape(), "H", H, "T", T, "encoderLength", encoderLength)
 
+	// The decode loop expects encoderOutput as a flat array indexed by [t*H + h].
+	// CoreML stores the data in row-major order as [1, H, T] meaning memory layout is H×T.
+	// We need to transpose to [T, H] so the decode loop can index by frame.
+	totalFloats := H * T
+	srcData := unsafe.Slice((*float32)(encoderTensor.DataPtr()), totalFloats)
+
+	encoderData := make([]float32, totalFloats)
 	if encoderTensor.DType() == coreml.DTypeFloat16 {
-		// Convert float16 to float32
-		src := unsafe.Slice((*uint16)(encoderTensor.DataPtr()), totalFloats)
-		for i, v := range src {
-			encoderData[i] = float16ToFloat32(v)
+		src16 := unsafe.Slice((*uint16)(encoderTensor.DataPtr()), totalFloats)
+		// Transpose [H, T] → [T, H] with float16→float32 conversion
+		for h := 0; h < H; h++ {
+			for t := 0; t < T; t++ {
+				encoderData[t*H+h] = float16ToFloat32(src16[h*T+t])
+			}
 		}
 	} else {
-		// Direct copy for float32
-		src := unsafe.Slice((*float32)(encoderTensor.DataPtr()), totalFloats)
-		copy(encoderData, src)
+		// Transpose [H, T] → [T, H]
+		for h := 0; h < H; h++ {
+			for t := 0; t < T; t++ {
+				encoderData[t*H+h] = srcData[h*T+t]
+			}
+		}
 	}
 
 	return encoderData, encoderLength, nil
@@ -337,6 +271,18 @@ func (p *ParakeetTranscriber) runDecoder(targetID int32, hIn, cIn []float32) (de
 	}
 	defer targetsTensor.Close()
 
+	// Create target_length tensor [1] with value 1 (always decoding 1 target at a time)
+	targetLen := []int32{1}
+	targetLenTensor, err := coreml.NewTensorWithData(
+		[]int64{1},
+		coreml.DTypeInt32,
+		unsafe.Pointer(&targetLen[0]),
+	)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("create target_length tensor: %w", err)
+	}
+	defer targetLenTensor.Close()
+
 	// Create h_in tensor [2, 1, 640]
 	hInTensor, err := coreml.NewTensorWithData(
 		[]int64{int64(parakeetLSTMLayers), 1, int64(parakeetDecoderHidden)},
@@ -359,40 +305,35 @@ func (p *ParakeetTranscriber) runDecoder(targetID int32, hIn, cIn []float32) (de
 	}
 	defer cInTensor.Close()
 
-	// Allocate output tensors
-	// decoder output: [1, 640] or [1, 1, 640]
-	decOutTensor, err := coreml.NewTensor([]int64{1, int64(parakeetDecoderHidden)}, coreml.DTypeFloat32)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("create decoder output tensor: %w", err)
+	// Map tensors to sorted input names
+	inputMap := map[string]*coreml.Tensor{
+		"targets":       targetsTensor,
+		"target_length": targetLenTensor,
+		"h_in":          hInTensor,
+		"c_in":          cInTensor,
 	}
-	defer decOutTensor.Close()
-
-	// h_out: [2, 1, 640]
-	hOutTensor, err := coreml.NewTensor([]int64{int64(parakeetLSTMLayers), 1, int64(parakeetDecoderHidden)}, coreml.DTypeFloat32)
+	inputs, err := orderInputs(p.decInputNames, inputMap)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("create h_out tensor: %w", err)
+		return nil, nil, nil, err
 	}
-	defer hOutTensor.Close()
 
-	// c_out: [2, 1, 640]
-	cOutTensor, err := coreml.NewTensor([]int64{int64(parakeetLSTMLayers), 1, int64(parakeetDecoderHidden)}, coreml.DTypeFloat32)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("create c_out tensor: %w", err)
-	}
-	defer cOutTensor.Close()
-
-	err = p.decoder.Predict(
-		p.decInputNames,
-		[]*coreml.Tensor{targetsTensor, hInTensor, cInTensor},
-		p.decOutputNames,
-		[]*coreml.Tensor{decOutTensor, hOutTensor, cOutTensor},
-	)
+	result, err := p.decoder.PredictAlloc(p.decInputNames, inputs)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("predict: %w", err)
 	}
+	defer result.Close()
+
+	// Extract outputs by name
+	decTensor := result.Tensor("decoder")
+	hOutTensor := result.Tensor("h_out")
+	cOutTensor := result.Tensor("c_out")
+
+	if decTensor == nil || hOutTensor == nil || cOutTensor == nil {
+		return nil, nil, nil, fmt.Errorf("missing decoder outputs (got %v)", result.Names)
+	}
 
 	// Copy outputs to Go slices
-	decoderOut = copyFloat32FromTensor(decOutTensor, parakeetDecoderHidden)
+	decoderOut = copyFloat32FromTensor(decTensor, parakeetDecoderHidden)
 	lstmStateSize := parakeetLSTMLayers * 1 * parakeetDecoderHidden
 	hOut = copyFloat32FromTensor(hOutTensor, lstmStateSize)
 	cOut = copyFloat32FromTensor(cOutTensor, lstmStateSize)
@@ -428,36 +369,35 @@ func (p *ParakeetTranscriber) runJoint(encoderStep, decoderStep []float32) (toke
 	}
 	defer decStepTensor.Close()
 
-	// Allocate output tensors
-	// token_id: [1, 1, 1] int32
-	tokenOutTensor, err := coreml.NewTensor([]int64{1, 1, 1}, coreml.DTypeInt32)
-	if err != nil {
-		return 0, 0, fmt.Errorf("create token_id output tensor: %w", err)
+	// Map tensors to sorted input names
+	inputMap := map[string]*coreml.Tensor{
+		"encoder_step": encStepTensor,
+		"decoder_step": decStepTensor,
 	}
-	defer tokenOutTensor.Close()
-
-	// duration: [1, 1, 1] int32
-	durOutTensor, err := coreml.NewTensor([]int64{1, 1, 1}, coreml.DTypeInt32)
+	inputs, err := orderInputs(p.jointInputNames, inputMap)
 	if err != nil {
-		return 0, 0, fmt.Errorf("create duration output tensor: %w", err)
+		return 0, 0, err
 	}
-	defer durOutTensor.Close()
 
-	err = p.joint.Predict(
-		p.jointInputNames,
-		[]*coreml.Tensor{encStepTensor, decStepTensor},
-		p.jointOutputNames,
-		[]*coreml.Tensor{tokenOutTensor, durOutTensor},
-	)
+	result, err := p.joint.PredictAlloc(p.jointInputNames, inputs)
 	if err != nil {
 		return 0, 0, fmt.Errorf("predict: %w", err)
 	}
+	defer result.Close()
+
+	// Extract outputs by name
+	tokenTensor := result.Tensor("token_id")
+	durTensor := result.Tensor("duration")
+
+	if tokenTensor == nil || durTensor == nil {
+		return 0, 0, fmt.Errorf("missing joint outputs (got %v)", result.Names)
+	}
 
 	// Extract token_id and duration
-	tokenPtr := (*int32)(tokenOutTensor.DataPtr())
+	tokenPtr := (*int32)(tokenTensor.DataPtr())
 	tokenID = *tokenPtr
 
-	durPtr := (*int32)(durOutTensor.DataPtr())
+	durPtr := (*int32)(durTensor.DataPtr())
 	duration = *durPtr
 
 	// Clamp duration to valid range
@@ -469,6 +409,19 @@ func (p *ParakeetTranscriber) runJoint(encoderStep, decoderStep []float32) (toke
 	}
 
 	return tokenID, duration, nil
+}
+
+// orderInputs arranges tensors to match the sorted input name order.
+func orderInputs(names []string, tensorMap map[string]*coreml.Tensor) ([]*coreml.Tensor, error) {
+	result := make([]*coreml.Tensor, len(names))
+	for i, name := range names {
+		t, ok := tensorMap[name]
+		if !ok {
+			return nil, fmt.Errorf("missing input tensor for %q", name)
+		}
+		result[i] = t
+	}
+	return result, nil
 }
 
 // padAudio pads or truncates audio to exactly maxSamples.
@@ -531,7 +484,7 @@ func float16ToFloat32(h uint16) float32 {
 	return math.Float32frombits(f)
 }
 
-// modelInputNames returns all input names for a model.
+// modelInputNames returns all input names for a model (sorted alphabetically).
 func modelInputNames(m *coreml.Model) []string {
 	names := make([]string, m.InputCount())
 	for i := range names {
@@ -540,7 +493,7 @@ func modelInputNames(m *coreml.Model) []string {
 	return names
 }
 
-// modelOutputNames returns all output names for a model.
+// modelOutputNames returns all output names for a model (sorted alphabetically).
 func modelOutputNames(m *coreml.Model) []string {
 	names := make([]string, m.OutputCount())
 	for i := range names {

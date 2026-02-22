@@ -222,6 +222,31 @@ int64_t coreml_tensor_dim(CoreMLTensor tensor, int axis) {
     }
 }
 
+int64_t coreml_tensor_stride(CoreMLTensor tensor, int axis) {
+    @autoreleasepool {
+        MLMultiArray* a = (__bridge MLMultiArray*)tensor;
+        if (axis < 0 || axis >= (int)[a.strides count]) return 0;
+        return [a.strides[axis] longLongValue];
+    }
+}
+
+bool coreml_tensor_is_contiguous(CoreMLTensor tensor) {
+    @autoreleasepool {
+        MLMultiArray* a = (__bridge MLMultiArray*)tensor;
+        // Check if strides are contiguous (row-major: last stride = 1, each prior = product of following dims)
+        int rank = (int)[a.shape count];
+        if (rank == 0) return true;
+
+        int64_t expected = 1;
+        for (int i = rank - 1; i >= 0; i--) {
+            int64_t stride = [a.strides[i] longLongValue];
+            if (stride != expected) return false;
+            expected *= [a.shape[i] longLongValue];
+        }
+        return true;
+    }
+}
+
 int coreml_tensor_dtype(CoreMLTensor tensor) {
     @autoreleasepool {
         MLMultiArray* a = (__bridge MLMultiArray*)tensor;
@@ -297,19 +322,226 @@ bool coreml_model_predict(CoreMLModel model,
                 return false;
             }
 
-            // Copy output data to provided tensor
+            // Copy output data to provided tensor — stride-aware for non-contiguous MLMultiArray outputs
             MLMultiArray* outArray = (__bridge MLMultiArray*)outputs[i];
             MLMultiArray* resultArray = value.multiArrayValue;
 
+            int rank = (int)[resultArray.shape count];
             int64_t total = 1;
-            for (NSNumber* dim in resultArray.shape) {
-                total *= [dim longLongValue];
+            int64_t shape[rank > 0 ? rank : 1];
+            for (int d = 0; d < rank; d++) {
+                shape[d] = [resultArray.shape[d] longLongValue];
+                total *= shape[d];
             }
 
             size_t elemSize = (resultArray.dataType == MLMultiArrayDataTypeFloat16) ? 2 : 4;
             if (total > 0) {
-                memcpy(outArray.dataPointer, resultArray.dataPointer, total * elemSize);
+                // Check if result array is contiguous (row-major)
+                bool contiguous = true;
+                int64_t expected = 1;
+                for (int d = rank - 1; d >= 0; d--) {
+                    int64_t stride = [resultArray.strides[d] longLongValue];
+                    if (stride != expected) {
+                        contiguous = false;
+                        break;
+                    }
+                    expected *= shape[d];
+                }
+
+                if (contiguous) {
+                    memcpy(outArray.dataPointer, resultArray.dataPointer, total * elemSize);
+                } else {
+                    // Stride-aware element-by-element copy
+                    const uint8_t* src = (const uint8_t*)resultArray.dataPointer;
+                    uint8_t* dst = (uint8_t*)outArray.dataPointer;
+
+                    int64_t srcStrides[rank];
+                    for (int d = 0; d < rank; d++) {
+                        srcStrides[d] = [resultArray.strides[d] longLongValue];
+                    }
+
+                    int64_t indices[rank > 0 ? rank : 1];
+                    memset(indices, 0, sizeof(indices));
+
+                    for (int64_t flat = 0; flat < total; flat++) {
+                        int64_t srcOffset = 0;
+                        for (int d = 0; d < rank; d++) {
+                            srcOffset += indices[d] * srcStrides[d];
+                        }
+
+                        memcpy(dst + flat * elemSize, src + srcOffset * elemSize, elemSize);
+
+                        for (int d = rank - 1; d >= 0; d--) {
+                            indices[d]++;
+                            if (indices[d] < shape[d]) break;
+                            indices[d] = 0;
+                        }
+                    }
+                }
             }
+        }
+
+        return true;
+    }
+}
+
+bool coreml_model_predict_alloc(CoreMLModel model,
+                                const char** input_names, CoreMLTensor* inputs, int num_inputs,
+                                char*** output_names_out, CoreMLTensor** outputs_out, int* num_outputs_out,
+                                CoreMLError* error) {
+    @autoreleasepool {
+        MLModel* m = (__bridge MLModel*)model;
+
+        // Build input dictionary
+        NSMutableDictionary<NSString*, MLFeatureValue*>* inputDict = [NSMutableDictionary dictionary];
+        for (int i = 0; i < num_inputs; i++) {
+            NSString* name = [NSString stringWithUTF8String:input_names[i]];
+            MLMultiArray* array = (__bridge MLMultiArray*)inputs[i];
+            MLFeatureValue* value = [MLFeatureValue featureValueWithMultiArray:array];
+            inputDict[name] = value;
+        }
+
+        // Create input provider
+        NSError* nsError = nil;
+        MLDictionaryFeatureProvider* provider = [[MLDictionaryFeatureProvider alloc] initWithDictionary:inputDict error:&nsError];
+        if (provider == nil) {
+            set_error(error, 1, nsError);
+            return false;
+        }
+
+        // Run prediction
+        id<MLFeatureProvider> result = [m predictionFromFeatures:provider error:&nsError];
+        if (result == nil) {
+            set_error(error, 2, nsError);
+            return false;
+        }
+
+        // Collect output names sorted for deterministic order
+        NSArray<NSString*>* names = [[[result featureNames] allObjects] sortedArrayUsingSelector:@selector(compare:)];
+        int numOutputs = (int)[names count];
+        *num_outputs_out = numOutputs;
+
+        // Allocate arrays for output names and tensors
+        *output_names_out = (char**)malloc(numOutputs * sizeof(char*));
+        *outputs_out = (CoreMLTensor*)malloc(numOutputs * sizeof(CoreMLTensor));
+
+        for (int i = 0; i < numOutputs; i++) {
+            NSString* name = names[i];
+            (*output_names_out)[i] = strdup([name UTF8String]);
+
+            MLFeatureValue* value = [result featureValueForName:name];
+            if (value == nil || value.multiArrayValue == nil) {
+                // Clean up already allocated entries
+                for (int j = 0; j < i; j++) {
+                    free((*output_names_out)[j]);
+                    coreml_tensor_free((*outputs_out)[j]);
+                }
+                free(*output_names_out);
+                free(*outputs_out);
+                *output_names_out = NULL;
+                *outputs_out = NULL;
+                *num_outputs_out = 0;
+                set_error(error, 3, nil);
+                return false;
+            }
+
+            MLMultiArray* resultArray = value.multiArrayValue;
+
+            // Create a new tensor with the result's actual shape
+            int rank = (int)[resultArray.shape count];
+            int64_t shape[rank];
+            int64_t total = 1;
+            for (int d = 0; d < rank; d++) {
+                shape[d] = [resultArray.shape[d] longLongValue];
+                total *= shape[d];
+            }
+
+            // Convert MLMultiArrayDataType to our dtype enum
+            int dtype;
+            switch (resultArray.dataType) {
+                case MLMultiArrayDataTypeFloat16: dtype = COREML_DTYPE_FLOAT16; break;
+                case MLMultiArrayDataTypeFloat32: dtype = COREML_DTYPE_FLOAT32; break;
+                case MLMultiArrayDataTypeInt32:   dtype = COREML_DTYPE_INT32; break;
+                default: dtype = COREML_DTYPE_FLOAT32; break;
+            }
+
+            CoreMLError tensorError = {0, NULL};
+            CoreMLTensor tensor = coreml_tensor_create(shape, rank, dtype, &tensorError);
+            if (tensor == NULL) {
+                for (int j = 0; j < i; j++) {
+                    free((*output_names_out)[j]);
+                    coreml_tensor_free((*outputs_out)[j]);
+                }
+                free((*output_names_out)[i]);
+                free(*output_names_out);
+                free(*outputs_out);
+                *output_names_out = NULL;
+                *outputs_out = NULL;
+                *num_outputs_out = 0;
+                if (tensorError.message) {
+                    set_error(error, 4, nil);
+                    error->message = tensorError.message;
+                } else {
+                    set_error(error, 4, nil);
+                }
+                return false;
+            }
+
+            // Copy data — stride-aware for non-contiguous MLMultiArray outputs.
+            // CoreML/ANE may return arrays with non-trivial strides, so we can't just memcpy.
+            MLMultiArray* outArray = (__bridge MLMultiArray*)tensor;
+            size_t elemSize = (resultArray.dataType == MLMultiArrayDataTypeFloat16) ? 2 : 4;
+            if (total > 0) {
+                // Check if result array is contiguous (row-major)
+                bool contiguous = true;
+                int64_t expected = 1;
+                for (int d = rank - 1; d >= 0; d--) {
+                    int64_t stride = [resultArray.strides[d] longLongValue];
+                    if (stride != expected) {
+                        contiguous = false;
+                        break;
+                    }
+                    expected *= shape[d];
+                }
+
+                if (contiguous) {
+                    memcpy(outArray.dataPointer, resultArray.dataPointer, total * elemSize);
+                } else {
+                    // Stride-aware element-by-element copy
+                    const uint8_t* src = (const uint8_t*)resultArray.dataPointer;
+                    uint8_t* dst = (uint8_t*)outArray.dataPointer;
+
+                    // Get strides for the result array
+                    int64_t srcStrides[rank];
+                    for (int d = 0; d < rank; d++) {
+                        srcStrides[d] = [resultArray.strides[d] longLongValue];
+                    }
+
+                    // Iterate through all elements using multi-dimensional indices
+                    // and compute source offset using strides, dest offset using row-major layout
+                    int64_t indices[rank];
+                    memset(indices, 0, sizeof(indices));
+
+                    for (int64_t flat = 0; flat < total; flat++) {
+                        // Compute source offset from strides
+                        int64_t srcOffset = 0;
+                        for (int d = 0; d < rank; d++) {
+                            srcOffset += indices[d] * srcStrides[d];
+                        }
+
+                        memcpy(dst + flat * elemSize, src + srcOffset * elemSize, elemSize);
+
+                        // Increment multi-dimensional index (last dimension first)
+                        for (int d = rank - 1; d >= 0; d--) {
+                            indices[d]++;
+                            if (indices[d] < shape[d]) break;
+                            indices[d] = 0;
+                        }
+                    }
+                }
+            }
+
+            (*outputs_out)[i] = tensor;
         }
 
         return true;

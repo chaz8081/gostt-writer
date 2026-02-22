@@ -3,7 +3,7 @@ package transcribe
 import "fmt"
 
 const (
-	parakeetBlankID        = 1024
+	parakeetBlankID        = 1024 // blank token index for v2 CoreML model (FluidInference conversion)
 	parakeetMaxSymsPerStep = 10
 	parakeetEncoderHidden  = 1024
 	parakeetDecoderHidden  = 640
