@@ -42,8 +42,8 @@ int gostt_decode_data_packet(const uint8_t *buf, size_t len, gostt_data_packet_t
         if (n == 0) return -1;
         pos += n;
 
-        uint8_t field_num = (uint8_t)(tag_val >> 3);
-        uint8_t wire_type = (uint8_t)(tag_val & 0x07);
+        uint32_t field_num = (uint32_t)(tag_val >> 3);
+        uint32_t wire_type = (uint32_t)(tag_val & 0x07);
 
         if (wire_type == 0) { // varint
             uint64_t val;
@@ -56,6 +56,7 @@ int gostt_decode_data_packet(const uint8_t *buf, size_t len, gostt_data_packet_t
             n = read_varint(buf + pos, len - pos, &field_len);
             if (n == 0) return -1;
             pos += n;
+            if (field_len > len) return -1;
             if (pos + field_len > len) return -1;
             switch (field_num) {
                 case 1:
@@ -90,8 +91,8 @@ int gostt_decode_keyboard_packet(const uint8_t *buf, size_t len, gostt_keyboard_
         if (n == 0) return -1;
         pos += n;
 
-        uint8_t field_num = (uint8_t)(tag_val >> 3);
-        uint8_t wire_type = (uint8_t)(tag_val & 0x07);
+        uint32_t field_num = (uint32_t)(tag_val >> 3);
+        uint32_t wire_type = (uint32_t)(tag_val & 0x07);
 
         if (wire_type == 0) { // varint
             uint64_t val;
@@ -104,6 +105,7 @@ int gostt_decode_keyboard_packet(const uint8_t *buf, size_t len, gostt_keyboard_
             n = read_varint(buf + pos, len - pos, &field_len);
             if (n == 0) return -1;
             pos += n;
+            if (field_len > len) return -1;
             if (pos + field_len > len) return -1;
             if (field_num == 1) {
                 out->message = (char *)(buf + pos);
@@ -128,8 +130,8 @@ int gostt_decode_encrypted_data(const uint8_t *buf, size_t len, gostt_encrypted_
         if (n == 0) return -1;
         pos += n;
 
-        uint8_t field_num = (uint8_t)(tag_val >> 3);
-        uint8_t wire_type = (uint8_t)(tag_val & 0x07);
+        uint32_t field_num = (uint32_t)(tag_val >> 3);
+        uint32_t wire_type = (uint32_t)(tag_val & 0x07);
 
         if (wire_type == 0) {
             uint64_t val;
@@ -142,6 +144,7 @@ int gostt_decode_encrypted_data(const uint8_t *buf, size_t len, gostt_encrypted_
             n = read_varint(buf + pos, len - pos, &field_len);
             if (n == 0) return -1;
             pos += n;
+            if (field_len > len) return -1;
             if (pos + field_len > len) return -1;
             switch (field_num) {
                 case 1:

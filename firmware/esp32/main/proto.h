@@ -4,7 +4,6 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#include <stdbool.h>
 
 // DataPacket (received from app, outer envelope)
 typedef struct {
