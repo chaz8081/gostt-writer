@@ -98,3 +98,22 @@ func TestChunkTextLongWordForced(t *testing.T) {
 		t.Errorf("reassembled length = %d, want %d", len(reassembled), len(text))
 	}
 }
+
+func TestChunkTextZeroMax(t *testing.T) {
+	chunks := ChunkText("hello", 0)
+	if chunks != nil {
+		t.Errorf("ChunkText with maxBytes=0 should return nil, got %v", chunks)
+	}
+}
+
+func TestChunkTextMaxSmallerThanRune(t *testing.T) {
+	// 4-byte emoji with maxBytes=1 should still make forward progress
+	text := "\U0001F600" // 4 bytes
+	chunks := ChunkText(text, 1)
+	if len(chunks) != 1 {
+		t.Fatalf("got %d chunks, want 1 (single rune forced)", len(chunks))
+	}
+	if chunks[0] != text {
+		t.Errorf("chunk[0] = %q, want %q", chunks[0], text)
+	}
+}

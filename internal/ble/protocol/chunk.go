@@ -4,13 +4,16 @@ package protocol
 import "unicode/utf8"
 
 // MaxPayloadBytes is the usable text bytes per BLE packet after
-// protobuf framing + AES-GCM overhead (253 - ~40 bytes overhead).
+// protobuf framing + AES-GCM overhead (253 - 40 bytes overhead).
 const MaxPayloadBytes = 213
 
 // ChunkText splits text into chunks that each fit within maxBytes.
 // It prefers splitting at word boundaries (spaces) and never splits
 // in the middle of a UTF-8 character. Returns nil for empty text.
 func ChunkText(text string, maxBytes int) []string {
+	if maxBytes <= 0 {
+		return nil
+	}
 	if len(text) == 0 {
 		return nil
 	}
@@ -33,6 +36,13 @@ func ChunkText(text string, maxBytes int) []string {
 		// Walk back until we're at the start of a rune.
 		for split > 0 && !utf8.RuneStart(text[split]) {
 			split--
+		}
+
+		// If no valid split point within maxBytes (e.g. a rune wider than
+		// maxBytes), force forward progress by taking one complete rune.
+		if split == 0 {
+			_, size := utf8.DecodeRuneInString(text)
+			split = size // take one rune even if it exceeds maxBytes
 		}
 
 		// Try to find a word boundary (space) by walking back from split.
