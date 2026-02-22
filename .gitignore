@@ -1,6 +1,9 @@
 # Worktrees
 .worktrees/
 
+# Task runner cache
+.task/
+
 # Go build artifacts
 bin/
 *.exe

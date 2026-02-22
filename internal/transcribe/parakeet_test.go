@@ -12,7 +12,7 @@ func parakeetModelDir(t *testing.T) string {
 	t.Helper()
 	dir := filepath.Join("..", "..", "models", "parakeet-tdt-v2")
 	if _, err := os.Stat(filepath.Join(dir, "Encoder.mlmodelc")); err != nil {
-		t.Skipf("Parakeet models not found at %s (run 'make parakeet-model' first)", dir)
+		t.Skipf("Parakeet models not found at %s (run 'task parakeet-model' first)", dir)
 	}
 	return dir
 }

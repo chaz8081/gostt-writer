@@ -14,7 +14,7 @@ func whisperModelPath(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join("..", "..", "models", "ggml-base.en.bin")
 	if _, err := os.Stat(path); err != nil {
-		t.Skipf("model not found at %s (run 'make model' first): %v", path, err)
+		t.Skipf("model not found at %s (run 'task whisper-model' first): %v", path, err)
 	}
 	return path
 }

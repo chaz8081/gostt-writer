@@ -6,26 +6,33 @@ Local real-time dictation for macOS. Press a hotkey, speak, and your words are t
 
 - macOS on Apple Silicon (M1 or later)
 - [Go 1.21+](https://go.dev/dl/)
+- [Task](https://taskfile.dev/) (`brew install go-task`)
 - [CMake](https://cmake.org/) (`brew install cmake`)
 - Xcode Command Line Tools (`xcode-select --install`)
 
-## Build
+## Build & Install
 
-Clone the repo and build everything (whisper.cpp, model download, and the binary):
+Clone the repo and install:
 
 ```bash
 git clone --recurse-submodules https://github.com/chaz8081/gostt-writer.git
 cd gostt-writer
-make all
+task install
 ```
 
-This takes a few minutes the first time. It downloads the ~140MB whisper base.en model and compiles whisper.cpp with Metal acceleration.
+On macOS, the installer prompts you to choose a transcription backend (whisper, parakeet, or both). On other platforms it defaults to whisper. The binary is installed to `/usr/local/bin` by default -- override with `task install INSTALL_DIR=~/bin`.
 
 If you already cloned without `--recurse-submodules`:
 
 ```bash
 git submodule update --init --recursive
-make all
+task install
+```
+
+To build without installing (binary stays in `bin/`):
+
+```bash
+task
 ```
 
 ## macOS Permissions
@@ -49,7 +56,13 @@ You may need to restart your terminal after granting permissions.
 ## Quick Start
 
 ```bash
-make run
+gostt-writer
+```
+
+Or if running from the repo without installing:
+
+```bash
+task run
 ```
 
 Then press `Ctrl+Shift+R`, speak, and release. Your words will be typed into whatever application has focus.
@@ -109,7 +122,7 @@ tmux has-session -t gostt 2>/dev/null && echo "running" || echo "not running"
 
 ```bash
 tmux kill-session -t gostt 2>/dev/null
-make build
+task build
 tmux new-session -d -s gostt 'cd /path/to/gostt-writer && ./bin/gostt-writer'
 ```
 
@@ -158,7 +171,7 @@ Transcription happens asynchronously -- you can start speaking again while the p
 
 [whisper.cpp](https://github.com/ggerganov/whisper.cpp) via Go bindings. Runs on CPU/GPU with Metal acceleration. Achieves ~26x real-time on M4 Max with the base.en model.
 
-No extra setup needed -- `make all` builds whisper.cpp and downloads the model automatically.
+No extra setup needed -- `task` builds whisper.cpp and downloads the model automatically.
 
 ### Parakeet TDT (optional)
 
@@ -168,7 +181,7 @@ To use Parakeet:
 
 1. Download the CoreML models:
    ```bash
-   make parakeet-model
+   task parakeet-model
    ```
 2. Set the backend in your config (`~/.config/gostt-writer/config.yaml`):
    ```yaml
@@ -176,22 +189,24 @@ To use Parakeet:
      backend: parakeet
    ```
 
-## Make Targets
+## Tasks
 
-| Target                | Description                                 |
-| --------------------- | ------------------------------------------- |
-| `make all`            | Build everything (whisper + model + binary) |
-| `make build`          | Build the gostt-writer binary               |
-| `make run`            | Build and run                               |
-| `make test`           | Run all tests                               |
-| `make whisper`        | Build whisper.cpp static library            |
-| `make model`          | Download the whisper model                  |
-| `make parakeet-model` | Download Parakeet TDT CoreML models         |
-| `make clean`          | Remove build artifacts                      |
-| `make help`           | Show all targets                            |
+Run `task --list` to see all available tasks:
+
+| Task                  | Description                                              |
+| --------------------- | -------------------------------------------------------- |
+| `task`                | Build everything (whisper.cpp + model + binary)          |
+| `task install`        | Build, download models, and install to /usr/local/bin    |
+| `task build`          | Build the gostt-writer binary                            |
+| `task run`            | Build and run gostt-writer                               |
+| `task test`           | Run all tests                                            |
+| `task whisper`        | Build whisper.cpp static library (Metal + Accelerate)    |
+| `task whisper-model`  | Download the whisper base.en model (~140 MB)             |
+| `task parakeet-model` | Download Parakeet TDT v2 CoreML models (~443 MB)         |
+| `task clean`          | Remove build artifacts                                   |
 
 ## Version
 
 ```bash
-./bin/gostt-writer --version
+gostt-writer --version
 ```

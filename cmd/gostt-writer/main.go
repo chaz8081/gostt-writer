@@ -64,7 +64,7 @@ func main() {
 		slog.Error("Failed to load transcription model",
 			"error", err,
 			"backend", cfg.Transcribe.Backend,
-			"hint", "Run 'make model' (whisper) or 'make parakeet-model' (parakeet) to download models")
+			"hint", "Run 'task whisper-model' or 'task parakeet-model' to download models")
 		os.Exit(1)
 	}
 	slog.Info("Model loaded", "backend", cfg.Transcribe.Backend, "elapsed", time.Since(modelStart).Round(time.Millisecond))

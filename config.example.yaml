@@ -9,14 +9,14 @@ transcribe:
   backend: whisper
 
   # Path to whisper.cpp model in ggml format (whisper backend only)
-  # Relative paths are resolved from the working directory (project root for 'make run')
+  # Relative paths are resolved from the working directory (project root for 'task run')
   # Use absolute path or ~ prefix for installed models
   model_path: models/ggml-base.en.bin
 
   # Directory containing Parakeet CoreML models + vocabulary (parakeet backend only)
   # Must contain: Preprocessor.mlmodelc, Encoder.mlmodelc, Decoder.mlmodelc,
   #               JointDecision.mlmodelc, parakeet_vocab.json
-  # Download with: make parakeet-model
+  # Download with: task parakeet-model
   parakeet_model_dir: models/parakeet-tdt-v2
 
 # DEPRECATED: top-level model_path is supported for backward compatibility.

@@ -1,0 +1,182 @@
+# https://taskfile.dev
+version: "3"
+
+vars:
+  # Paths
+  WHISPER_DIR: third_party/whisper.cpp
+  WHISPER_BUILD: "{{.WHISPER_DIR}}/build_go"
+  MODELS_DIR: models
+  BIN_DIR: bin
+  BINARY: "{{.BIN_DIR}}/gostt-writer"
+  INSTALL_DIR: /usr/local/bin
+
+  # Version from git
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
+
+  # whisper.cpp include paths (match Go bindings conventions)
+  INCLUDE_PATH: "{{.ROOT_DIR}}/{{.WHISPER_DIR}}/include:{{.ROOT_DIR}}/{{.WHISPER_DIR}}/ggml/include"
+  GGML_METAL_PATH_RESOURCES: "{{.ROOT_DIR}}/{{.WHISPER_DIR}}"
+
+  # Library paths: whisper, ggml, ggml-blas, ggml-metal
+  LIBRARY_PATH: "{{.ROOT_DIR}}/{{.WHISPER_BUILD}}/src:{{.ROOT_DIR}}/{{.WHISPER_BUILD}}/ggml/src:{{.ROOT_DIR}}/{{.WHISPER_BUILD}}/ggml/src/ggml-blas:{{.ROOT_DIR}}/{{.WHISPER_BUILD}}/ggml/src/ggml-metal"
+
+  # macOS linker flags
+  EXT_LDFLAGS: -framework Foundation -framework Metal -framework MetalKit -framework CoreML -lggml-metal -lggml-blas
+
+  # Whisper model
+  MODEL_NAME: ggml-base.en.bin
+  MODEL_URL: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{{.MODEL_NAME}}"
+  MODEL_PATH: "{{.MODELS_DIR}}/{{.MODEL_NAME}}"
+
+  # Parakeet TDT CoreML model
+  PARAKEET_DIR: "{{.MODELS_DIR}}/parakeet-tdt-v2"
+  PARAKEET_REPO: https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v2-coreml
+
+# Environment shared by build, test, and run
+env:
+  CGO_ENABLED: "1"
+  C_INCLUDE_PATH: "{{.INCLUDE_PATH}}"
+  LIBRARY_PATH: "{{.LIBRARY_PATH}}"
+  GGML_METAL_PATH_RESOURCES: "{{.GGML_METAL_PATH_RESOURCES}}"
+
+tasks:
+  default:
+    desc: Build everything (whisper.cpp + model + binary)
+    deps: [whisper, whisper-model, build]
+
+  install:
+    desc: Build, download models, and install to INSTALL_DIR (default /usr/local/bin)
+    deps: [whisper]
+    cmds:
+      - |
+        OS="$(uname -s)"
+        if [ "$OS" = "Darwin" ]; then
+          echo ""
+          echo "Which transcription backend would you like to install?"
+          echo "  [1] whisper  - CPU/GPU via Metal (default)"
+          echo "  [2] parakeet - Apple Neural Engine via CoreML (faster, lower WER)"
+          echo "  [3] both"
+          echo ""
+          printf "Choose [1/2/3] (default: 1): "
+          read -r choice
+          choice="${choice:-1}"
+        else
+          echo "Non-macOS detected — installing with whisper backend."
+          choice="1"
+        fi
+
+        case "$choice" in
+          1)
+            task whisper-model
+            ;;
+          2)
+            task parakeet-model
+            ;;
+          3)
+            task whisper-model
+            task parakeet-model
+            ;;
+          *)
+            echo "Invalid choice: $choice"
+            exit 1
+            ;;
+        esac
+
+        task build
+
+        echo "Installing gostt-writer to {{.INSTALL_DIR}}..."
+        mkdir -p {{.INSTALL_DIR}}
+        cp {{.BINARY}} {{.INSTALL_DIR}}/gostt-writer
+        echo "Installed gostt-writer to {{.INSTALL_DIR}}/gostt-writer"
+    interactive: true
+
+  whisper:
+    desc: Build whisper.cpp static library (Metal + Accelerate)
+    preconditions:
+      - sh: test -f {{.WHISPER_DIR}}/CMakeLists.txt
+        msg: |
+          whisper.cpp submodule not found. Run:
+            git submodule update --init --recursive
+    cmds:
+      - >-
+        cmake -S {{.WHISPER_DIR}} -B {{.WHISPER_BUILD}}
+        -DCMAKE_BUILD_TYPE=Release
+        -DBUILD_SHARED_LIBS=OFF
+      - cmake --build {{.WHISPER_BUILD}} --target whisper
+    sources:
+      - "{{.WHISPER_DIR}}/CMakeLists.txt"
+      - "{{.WHISPER_DIR}}/src/**/*"
+      - "{{.WHISPER_DIR}}/include/**/*"
+      - "{{.WHISPER_DIR}}/ggml/**/*"
+    generates:
+      - "{{.WHISPER_BUILD}}/src/libwhisper.a"
+    status:
+      - test -f {{.WHISPER_BUILD}}/src/libwhisper.a
+
+  whisper-model:
+    desc: Download the whisper base.en model (~140 MB)
+    cmds:
+      - mkdir -p {{.MODELS_DIR}}
+      - curl -L -o {{.MODEL_PATH}} {{.MODEL_URL}}
+    status:
+      - test -f {{.MODEL_PATH}}
+
+  parakeet-model:
+    desc: Download Parakeet TDT v2 CoreML models (~443 MB)
+    cmds:
+      - mkdir -p {{.PARAKEET_DIR}}
+      - |
+        TMPDIR=$(mktemp -d)
+        echo "Cloning from HuggingFace (sparse checkout)..."
+        git clone --filter=blob:none --no-checkout {{.PARAKEET_REPO}} "$TMPDIR"
+        cd "$TMPDIR"
+        git sparse-checkout set Preprocessor.mlmodelc Encoder.mlmodelc Decoder.mlmodelc JointDecision.mlmodelc parakeet_vocab.json
+        git checkout
+        git lfs pull
+        echo "Copying models to {{.PARAKEET_DIR}}..."
+        cp -R Preprocessor.mlmodelc Encoder.mlmodelc Decoder.mlmodelc JointDecision.mlmodelc parakeet_vocab.json "{{.ROOT_DIR}}/{{.PARAKEET_DIR}}/"
+        cd - > /dev/null
+        rm -rf "$TMPDIR"
+    status:
+      - test -d {{.PARAKEET_DIR}}/Encoder.mlmodelc
+
+  build:
+    desc: Build the gostt-writer binary
+    deps: [whisper]
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - >-
+        go build
+        -ldflags "-X main.version={{.VERSION}} -extldflags '{{.EXT_LDFLAGS}}'"
+        -o {{.BINARY}} ./cmd/gostt-writer
+      - echo "Built {{.BINARY}}"
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+    generates:
+      - "{{.BINARY}}"
+
+  run:
+    desc: Build and run gostt-writer
+    deps: [build]
+    cmds:
+      - ./{{.BINARY}}
+
+  test:
+    desc: Run all tests
+    deps: [whisper]
+    cmds:
+      - >-
+        go test
+        -ldflags "-extldflags '{{.EXT_LDFLAGS}}'"
+        -v ./...
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -rf {{.BIN_DIR}}
+      - rm -rf {{.WHISPER_BUILD}}
+      - go clean
+      - echo "Cleaned build artifacts."
