@@ -41,7 +41,17 @@ audio:
 inject:
   # Method: "type" = keystroke simulation (preserves clipboard),
   #         "paste" = clipboard + Cmd+V (faster but overwrites clipboard)
+  #         "ble" = send to ESP32-S3 via Bluetooth Low Energy (requires pairing)
   method: type
+
+  # BLE output settings (only used when method is "ble")
+  # Run "task ble-pair" to pair with an ESP32-S3 running ToothPaste firmware.
+  # device_mac and shared_secret are written automatically by the pairing command.
+  # ble:
+  #   device_mac: "AA:BB:CC:DD:EE:FF"
+  #   shared_secret: "..."
+  #   queue_size: 64        # max buffered messages during BLE disconnect (default: 64)
+  #   reconnect_max: 30     # max reconnect backoff in seconds (default: 30)
 
 # Log level: debug, info, warn, error
 log_level: info

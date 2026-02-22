@@ -380,6 +380,107 @@ func TestValidateUnknownBackendFails(t *testing.T) {
 	}
 }
 
+func TestLoadBLEConfig(t *testing.T) {
+	yamlContent := `
+inject:
+  method: ble
+  ble:
+    device_mac: "AA:BB:CC:DD:EE:FF"
+    shared_secret: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    queue_size: 32
+    reconnect_max: 15
+`
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.Inject.Method != "ble" {
+		t.Errorf("Inject.Method = %q, want %q", cfg.Inject.Method, "ble")
+	}
+	if cfg.Inject.BLE.DeviceMAC != "AA:BB:CC:DD:EE:FF" {
+		t.Errorf("Inject.BLE.DeviceMAC = %q, want %q", cfg.Inject.BLE.DeviceMAC, "AA:BB:CC:DD:EE:FF")
+	}
+	if cfg.Inject.BLE.SharedSecret != "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" {
+		t.Errorf("Inject.BLE.SharedSecret = %q", cfg.Inject.BLE.SharedSecret)
+	}
+	if cfg.Inject.BLE.QueueSize != 32 {
+		t.Errorf("Inject.BLE.QueueSize = %d, want 32", cfg.Inject.BLE.QueueSize)
+	}
+	if cfg.Inject.BLE.ReconnectMax != 15 {
+		t.Errorf("Inject.BLE.ReconnectMax = %d, want 15", cfg.Inject.BLE.ReconnectMax)
+	}
+}
+
+func TestValidateBLEMethodRequiresPairing(t *testing.T) {
+	cfg := Default()
+	cfg.Inject.Method = "ble"
+	// No BLE config set
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Validate() should fail when method=ble but no device_mac")
+	}
+}
+
+func TestValidateBLEMethodWithPairing(t *testing.T) {
+	cfg := Default()
+	cfg.Inject.Method = "ble"
+	cfg.Inject.BLE.DeviceMAC = "AA:BB:CC:DD:EE:FF"
+	cfg.Inject.BLE.SharedSecret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	err := cfg.Validate()
+	if err != nil {
+		t.Errorf("Validate() unexpected error: %v", err)
+	}
+}
+
+func TestValidateBLEBadSharedSecret(t *testing.T) {
+	cfg := Default()
+	cfg.Inject.Method = "ble"
+	cfg.Inject.BLE.DeviceMAC = "AA:BB:CC:DD:EE:FF"
+	cfg.Inject.BLE.SharedSecret = "not-hex"
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Validate() should fail for non-hex shared_secret")
+	}
+}
+
+func TestBLEConfigDefaults(t *testing.T) {
+	cfg := Default()
+	if cfg.Inject.BLE.QueueSize != 0 {
+		t.Errorf("default BLE.QueueSize = %d, want 0 (will use runtime default)", cfg.Inject.BLE.QueueSize)
+	}
+}
+
+func TestLoadConfigWithoutBLESection(t *testing.T) {
+	// Backward compat: configs without inject.ble should still load fine
+	yamlContent := `
+inject:
+  method: type
+`
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Inject.Method != "type" {
+		t.Errorf("Inject.Method = %q, want %q", cfg.Inject.Method, "type")
+	}
+	if cfg.Inject.BLE.DeviceMAC != "" {
+		t.Errorf("Inject.BLE.DeviceMAC = %q, want empty", cfg.Inject.BLE.DeviceMAC)
+	}
+}
+
 func TestParseLogLevel(t *testing.T) {
 	tests := []struct {
 		input string

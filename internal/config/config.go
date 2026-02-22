@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"os"
@@ -41,7 +42,16 @@ type AudioConfig struct {
 
 // InjectConfig holds text injection settings.
 type InjectConfig struct {
-	Method string `yaml:"method"` // "type" or "paste"
+	Method string    `yaml:"method"` // "type", "paste", or "ble"
+	BLE    BLEConfig `yaml:"ble"`
+}
+
+// BLEConfig holds BLE output settings (used when inject.method is "ble").
+type BLEConfig struct {
+	DeviceMAC    string `yaml:"device_mac"`    // paired ESP32 MAC address
+	SharedSecret string `yaml:"shared_secret"` // hex-encoded 32-byte AES key
+	QueueSize    int    `yaml:"queue_size"`    // max queued messages during disconnect (default 64)
+	ReconnectMax int    `yaml:"reconnect_max"` // max reconnect backoff in seconds (default 30)
 }
 
 // DefaultConfigDir returns the default config directory path.
@@ -151,8 +161,21 @@ func (c *Config) Validate() error {
 
 	switch c.Inject.Method {
 	case "type", "paste":
+	case "ble":
+		if c.Inject.BLE.DeviceMAC == "" {
+			return fmt.Errorf("inject.ble.device_mac required when inject.method is \"ble\" (run: task ble-pair)")
+		}
+		if c.Inject.BLE.SharedSecret == "" {
+			return fmt.Errorf("inject.ble.shared_secret required when inject.method is \"ble\" (run: task ble-pair)")
+		}
+		if len(c.Inject.BLE.SharedSecret) != 64 {
+			return fmt.Errorf("inject.ble.shared_secret must be 64 hex characters (32 bytes), got %d", len(c.Inject.BLE.SharedSecret))
+		}
+		if _, err := hex.DecodeString(c.Inject.BLE.SharedSecret); err != nil {
+			return fmt.Errorf("inject.ble.shared_secret must be valid hex: %w", err)
+		}
 	default:
-		return fmt.Errorf("inject.method must be \"type\" or \"paste\", got %q", c.Inject.Method)
+		return fmt.Errorf("inject.method must be \"type\", \"paste\", or \"ble\", got %q", c.Inject.Method)
 	}
 
 	switch c.LogLevel {
