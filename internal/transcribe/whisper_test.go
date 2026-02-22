@@ -43,20 +43,20 @@ func TestNewWhisperTranscriberBadPath(t *testing.T) {
 	}
 }
 
-// jfkSamples loads the JFK sample WAV and returns mono float32 samples.
-func jfkSamples(t *testing.T) []float32 {
+// loadWAVSamples loads a 16-bit PCM WAV file and returns mono float32 samples
+// normalized to [-1.0, 1.0]. The test is skipped if the file does not exist.
+func loadWAVSamples(t *testing.T, wavPath string) []float32 {
 	t.Helper()
-	wavPath := filepath.Join("..", "..", "third_party", "whisper.cpp", "samples", "jfk.wav")
 	f, err := os.Open(wavPath)
 	if err != nil {
-		t.Skipf("JFK sample not found at %s: %v", wavPath, err)
+		t.Skipf("WAV file not found at %s: %v", wavPath, err)
 	}
 	defer f.Close()
 
 	dec := wav.NewDecoder(f)
 	buf, err := dec.FullPCMBuffer()
 	if err != nil {
-		t.Fatalf("decode WAV: %v", err)
+		t.Fatalf("decode WAV %s: %v", wavPath, err)
 	}
 
 	// Convert int samples to float32 normalized to [-1.0, 1.0]
@@ -65,6 +65,30 @@ func jfkSamples(t *testing.T) []float32 {
 		samples[i] = float32(s) / 32768.0
 	}
 	return samples
+}
+
+// jfkSamples loads the JFK sample WAV and returns mono float32 samples.
+func jfkSamples(t *testing.T) []float32 {
+	t.Helper()
+	wavPath := filepath.Join("..", "..", "third_party", "whisper.cpp", "samples", "jfk.wav")
+	return loadWAVSamples(t, wavPath)
+}
+
+func TestLoadWAVSamples(t *testing.T) {
+	wavPath := filepath.Join("testdata", "short.wav")
+	samples := loadWAVSamples(t, wavPath)
+
+	// short.wav is ~2.76s at 16kHz = ~44,160 samples
+	if len(samples) < 40000 || len(samples) > 50000 {
+		t.Errorf("expected ~44160 samples, got %d", len(samples))
+	}
+
+	// All samples should be in [-1.0, 1.0]
+	for i, s := range samples {
+		if s < -1.0 || s > 1.0 {
+			t.Fatalf("sample[%d] = %f, out of [-1.0, 1.0] range", i, s)
+		}
+	}
 }
 
 func TestWhisperProcessJFK(t *testing.T) {
