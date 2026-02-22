@@ -1,6 +1,6 @@
 # gostt-writer
 
-Local real-time dictation for macOS. Press a hotkey, speak, and your words are typed into the active application. All processing happens on-device using [whisper.cpp](https://github.com/ggerganov/whisper.cpp) -- nothing is sent to the cloud.
+Local real-time dictation for macOS. Press a hotkey, speak, and your words are typed into the active application. All processing happens on-device -- nothing is sent to the cloud. Choose between [whisper.cpp](https://github.com/ggerganov/whisper.cpp) (default) or [Parakeet TDT 0.6B v2](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2) via CoreML for Apple Neural Engine acceleration.
 
 ## Prerequisites
 
@@ -133,7 +133,9 @@ See [`config.example.yaml`](config.example.yaml) for all options with documentat
 
 | Setting | Default | Description |
 |---|---|---|
-| `model_path` | `models/ggml-base.en.bin` | Path to whisper model |
+| `transcribe.backend` | `whisper` | `whisper` or `parakeet` |
+| `transcribe.model_path` | `models/ggml-base.en.bin` | Path to whisper model |
+| `transcribe.parakeet_model_dir` | `models/parakeet-tdt-v2` | Path to Parakeet CoreML models |
 | `hotkey.keys` | `["ctrl", "shift", "r"]` | Key combination |
 | `hotkey.mode` | `hold` | `hold` = push-to-talk, `toggle` = press to start/stop |
 | `inject.method` | `type` | `type` = keystrokes, `paste` = clipboard + Cmd+V |
@@ -143,10 +145,34 @@ See [`config.example.yaml`](config.example.yaml) for all options with documentat
 
 1. A global hotkey listener waits for your configured key combo
 2. On press, audio is captured from your default microphone at 16kHz mono
-3. On release, the audio is sent to whisper.cpp for local transcription (Metal-accelerated)
+3. On release, the audio is sent for local transcription (Metal-accelerated whisper or CoreML Neural Engine Parakeet)
 4. The transcribed text is injected into the active application via keystroke simulation
 
 Transcription happens asynchronously -- you can start speaking again while the previous result is being typed.
+
+## Backends
+
+### Whisper (default)
+
+[whisper.cpp](https://github.com/ggerganov/whisper.cpp) via Go bindings. Runs on CPU/GPU with Metal acceleration. Achieves ~26x real-time on M4 Max with the base.en model.
+
+No extra setup needed -- `make all` builds whisper.cpp and downloads the model automatically.
+
+### Parakeet TDT (optional)
+
+[NVIDIA Parakeet TDT 0.6B v2](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2) via CoreML. Runs on the Apple Neural Engine. Achieves ~110x real-time on M4 Max with lower word error rate than whisper base.en.
+
+To use Parakeet:
+
+1. Download the CoreML models:
+   ```bash
+   make parakeet-model
+   ```
+2. Set the backend in your config (`~/.config/gostt-writer/config.yaml`):
+   ```yaml
+   transcribe:
+     backend: parakeet
+   ```
 
 ## Make Targets
 
@@ -158,6 +184,7 @@ Transcription happens asynchronously -- you can start speaking again while the p
 | `make test` | Run all tests |
 | `make whisper` | Build whisper.cpp static library |
 | `make model` | Download the whisper model |
+| `make parakeet-model` | Download Parakeet TDT CoreML models |
 | `make clean` | Remove build artifacts |
 | `make help` | Show all targets |
 
