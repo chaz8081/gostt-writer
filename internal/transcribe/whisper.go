@@ -1,5 +1,3 @@
-// Package transcribe wraps whisper.cpp Go bindings for speech-to-text.
-// It loads the model once at startup and exposes Process([]float32) -> (string, error).
 package transcribe
 
 import (
@@ -10,23 +8,23 @@ import (
 	whisper "github.com/ggerganov/whisper.cpp/bindings/go/pkg/whisper"
 )
 
-// Transcriber wraps a whisper model and provides speech-to-text via Process.
-type Transcriber struct {
+// WhisperTranscriber wraps a whisper.cpp model for speech-to-text.
+type WhisperTranscriber struct {
 	model whisper.Model
 }
 
-// NewTranscriber loads a whisper model from the given path.
+// NewWhisperTranscriber loads a whisper model from the given path.
 // The caller must call Close() when done.
-func NewTranscriber(modelPath string) (*Transcriber, error) {
+func NewWhisperTranscriber(modelPath string) (*WhisperTranscriber, error) {
 	model, err := whisper.New(modelPath)
 	if err != nil {
-		return nil, fmt.Errorf("transcribe: load model %q: %w", modelPath, err)
+		return nil, fmt.Errorf("transcribe: load whisper model %q: %w", modelPath, err)
 	}
-	return &Transcriber{model: model}, nil
+	return &WhisperTranscriber{model: model}, nil
 }
 
 // Close releases the whisper model resources.
-func (t *Transcriber) Close() error {
+func (t *WhisperTranscriber) Close() error {
 	if t.model != nil {
 		return t.model.Close()
 	}
@@ -34,7 +32,7 @@ func (t *Transcriber) Close() error {
 }
 
 // Process transcribes mono 16kHz float32 audio samples to text.
-func (t *Transcriber) Process(samples []float32) (string, error) {
+func (t *WhisperTranscriber) Process(samples []float32) (string, error) {
 	ctx, err := t.model.NewContext()
 	if err != nil {
 		return "", fmt.Errorf("transcribe: create context: %w", err)

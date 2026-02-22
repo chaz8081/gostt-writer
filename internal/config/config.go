@@ -12,11 +12,19 @@ import (
 
 // Config holds all application configuration.
 type Config struct {
-	ModelPath string       `yaml:"model_path"`
-	Hotkey    HotkeyConfig `yaml:"hotkey"`
-	Audio     AudioConfig  `yaml:"audio"`
-	Inject    InjectConfig `yaml:"inject"`
-	LogLevel  string       `yaml:"log_level"`
+	ModelPath  string           `yaml:"model_path"` // deprecated: use Transcribe.ModelPath
+	Transcribe TranscribeConfig `yaml:"transcribe"`
+	Hotkey     HotkeyConfig     `yaml:"hotkey"`
+	Audio      AudioConfig      `yaml:"audio"`
+	Inject     InjectConfig     `yaml:"inject"`
+	LogLevel   string           `yaml:"log_level"`
+}
+
+// TranscribeConfig holds transcription backend settings.
+type TranscribeConfig struct {
+	Backend          string `yaml:"backend"`            // "whisper" or "parakeet"
+	ModelPath        string `yaml:"model_path"`         // whisper: path to ggml model file
+	ParakeetModelDir string `yaml:"parakeet_model_dir"` // parakeet: dir with .mlmodelc files + vocab
 }
 
 // HotkeyConfig holds hotkey-related settings.
@@ -54,6 +62,11 @@ func DefaultConfigPath() string {
 func Default() *Config {
 	return &Config{
 		ModelPath: "models/ggml-base.en.bin",
+		Transcribe: TranscribeConfig{
+			Backend:          "whisper",
+			ModelPath:        "models/ggml-base.en.bin",
+			ParakeetModelDir: "models/parakeet-tdt-v2",
+		},
 		Hotkey: HotkeyConfig{
 			Keys: []string{"ctrl", "shift", "r"},
 			Mode: "hold",
@@ -70,7 +83,9 @@ func Default() *Config {
 }
 
 // Load reads and parses a YAML config file. Missing fields are filled
-// with defaults. Tilde (~) in model_path is expanded to the user's home directory.
+// with defaults. Tilde (~) in paths is expanded to the user's home directory.
+// For backward compatibility, a top-level model_path is copied to
+// Transcribe.ModelPath if the latter is not explicitly set.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -82,15 +97,38 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing config file: %w", err)
 	}
 
+	// Backward compat: old top-level model_path → Transcribe.ModelPath
+	if cfg.ModelPath != "" && cfg.Transcribe.ModelPath == Default().Transcribe.ModelPath {
+		cfg.Transcribe.ModelPath = cfg.ModelPath
+	}
+
+	// Default backend if not set
+	if cfg.Transcribe.Backend == "" {
+		cfg.Transcribe.Backend = "whisper"
+	}
+
+	// Expand tildes
 	cfg.ModelPath = expandTilde(cfg.ModelPath)
+	cfg.Transcribe.ModelPath = expandTilde(cfg.Transcribe.ModelPath)
+	cfg.Transcribe.ParakeetModelDir = expandTilde(cfg.Transcribe.ParakeetModelDir)
 
 	return cfg, nil
 }
 
 // Validate checks the config for invalid values.
 func (c *Config) Validate() error {
-	if c.ModelPath == "" {
-		return fmt.Errorf("model_path must not be empty")
+	// Validate transcribe backend
+	switch c.Transcribe.Backend {
+	case "whisper", "":
+		if c.Transcribe.ModelPath == "" {
+			return fmt.Errorf("transcribe.model_path must not be empty for whisper backend")
+		}
+	case "parakeet":
+		if c.Transcribe.ParakeetModelDir == "" {
+			return fmt.Errorf("transcribe.parakeet_model_dir must not be empty for parakeet backend")
+		}
+	default:
+		return fmt.Errorf("transcribe.backend must be \"whisper\" or \"parakeet\", got %q", c.Transcribe.Backend)
 	}
 
 	if len(c.Hotkey.Keys) == 0 {

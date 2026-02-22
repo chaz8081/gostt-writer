@@ -56,18 +56,18 @@ func main() {
 
 	printBanner(cfg)
 
-	// Initialize whisper transcriber
-	slog.Info("Loading whisper model...")
+	// Initialize transcriber
+	slog.Info("Loading transcription model...", "backend", cfg.Transcribe.Backend)
 	modelStart := time.Now()
-	transcriber, err := transcribe.NewTranscriber(cfg.ModelPath)
+	transcriber, err := transcribe.New(&cfg.Transcribe)
 	if err != nil {
-		slog.Error("Failed to load whisper model",
+		slog.Error("Failed to load transcription model",
 			"error", err,
-			"model_path", cfg.ModelPath,
-			"hint", "Run 'make model' to download the model")
+			"backend", cfg.Transcribe.Backend,
+			"hint", "Run 'make model' (whisper) or 'make parakeet-model' (parakeet) to download models")
 		os.Exit(1)
 	}
-	slog.Info("Model loaded", "elapsed", time.Since(modelStart).Round(time.Millisecond))
+	slog.Info("Model loaded", "backend", cfg.Transcribe.Backend, "elapsed", time.Since(modelStart).Round(time.Millisecond))
 
 	// Initialize audio recorder
 	recorder, err := audio.NewRecorder(cfg.Audio.SampleRate, cfg.Audio.Channels)
@@ -223,7 +223,13 @@ func loadConfig(path string) (*config.Config, error) {
 func printBanner(cfg *config.Config) {
 	fmt.Println("=== gostt-writer ===")
 	fmt.Printf("  Version: %s\n", version)
-	fmt.Printf("  Model:   %s\n", cfg.ModelPath)
+	fmt.Printf("  Backend: %s\n", cfg.Transcribe.Backend)
+	switch cfg.Transcribe.Backend {
+	case "parakeet":
+		fmt.Printf("  Model:   %s\n", cfg.Transcribe.ParakeetModelDir)
+	default:
+		fmt.Printf("  Model:   %s\n", cfg.Transcribe.ModelPath)
+	}
 	fmt.Printf("  Hotkey:  %s (%s mode)\n", strings.Join(cfg.Hotkey.Keys, "+"), cfg.Hotkey.Mode)
 	fmt.Printf("  Audio:   %dHz, %dch\n", cfg.Audio.SampleRate, cfg.Audio.Channels)
 	fmt.Printf("  Inject:  %s\n", cfg.Inject.Method)

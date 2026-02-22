@@ -9,14 +9,9 @@ import (
 	"github.com/go-audio/wav"
 )
 
-// modelPath resolves the path to the whisper model relative to the project root.
-// Tests must be run from the project root (or via make test).
-func modelPath(t *testing.T) string {
+// whisperModelPath resolves the path to the whisper model relative to the project root.
+func whisperModelPath(t *testing.T) string {
 	t.Helper()
-	// Walk up from the test file location to find models/
-	// When run via `make test` or `go test ./...` from project root,
-	// the working directory is the package directory.
-	// We go up two levels: internal/transcribe -> project root
 	path := filepath.Join("..", "..", "models", "ggml-base.en.bin")
 	if _, err := os.Stat(path); err != nil {
 		t.Skipf("model not found at %s (run 'make model' first): %v", path, err)
@@ -24,15 +19,15 @@ func modelPath(t *testing.T) string {
 	return path
 }
 
-func TestNewTranscriber(t *testing.T) {
-	path := modelPath(t)
+func TestNewWhisperTranscriber(t *testing.T) {
+	path := whisperModelPath(t)
 
-	tr, err := NewTranscriber(path)
+	tr, err := NewWhisperTranscriber(path)
 	if err != nil {
-		t.Fatalf("NewTranscriber(%q) returned error: %v", path, err)
+		t.Fatalf("NewWhisperTranscriber(%q) returned error: %v", path, err)
 	}
 	if tr == nil {
-		t.Fatal("NewTranscriber returned nil without error")
+		t.Fatal("NewWhisperTranscriber returned nil without error")
 	}
 
 	err = tr.Close()
@@ -41,10 +36,10 @@ func TestNewTranscriber(t *testing.T) {
 	}
 }
 
-func TestNewTranscriberBadPath(t *testing.T) {
-	_, err := NewTranscriber("/nonexistent/model.bin")
+func TestNewWhisperTranscriberBadPath(t *testing.T) {
+	_, err := NewWhisperTranscriber("/nonexistent/model.bin")
 	if err == nil {
-		t.Fatal("NewTranscriber with bad path should return error")
+		t.Fatal("NewWhisperTranscriber with bad path should return error")
 	}
 }
 
@@ -72,13 +67,13 @@ func jfkSamples(t *testing.T) []float32 {
 	return samples
 }
 
-func TestProcessJFK(t *testing.T) {
-	path := modelPath(t)
+func TestWhisperProcessJFK(t *testing.T) {
+	path := whisperModelPath(t)
 	samples := jfkSamples(t)
 
-	tr, err := NewTranscriber(path)
+	tr, err := NewWhisperTranscriber(path)
 	if err != nil {
-		t.Fatalf("NewTranscriber: %v", err)
+		t.Fatalf("NewWhisperTranscriber: %v", err)
 	}
 	defer tr.Close()
 
@@ -93,12 +88,12 @@ func TestProcessJFK(t *testing.T) {
 	}
 }
 
-func TestProcessEmptyAudio(t *testing.T) {
-	path := modelPath(t)
+func TestWhisperProcessEmptyAudio(t *testing.T) {
+	path := whisperModelPath(t)
 
-	tr, err := NewTranscriber(path)
+	tr, err := NewWhisperTranscriber(path)
 	if err != nil {
-		t.Fatalf("NewTranscriber: %v", err)
+		t.Fatalf("NewWhisperTranscriber: %v", err)
 	}
 	defer tr.Close()
 
@@ -108,7 +103,5 @@ func TestProcessEmptyAudio(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Process on silence returned error: %v", err)
 	}
-	// We don't assert the exact text — whisper may hallucinate on silence.
-	// Just verify it didn't crash and returned something.
 	_ = text
 }

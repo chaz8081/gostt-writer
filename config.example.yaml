@@ -1,10 +1,27 @@
 # gostt-writer configuration
 # Default location: ~/.config/gostt-writer/config.yaml
 
-# Path to whisper.cpp model in ggml format
-# Relative paths are resolved from the working directory (project root for 'make run')
-# Use absolute path or ~ prefix for installed models
-model_path: models/ggml-base.en.bin
+# Transcription backend settings
+transcribe:
+  # Backend: "whisper" (default) or "parakeet"
+  #   whisper  - whisper.cpp via Go bindings, uses CPU/GPU
+  #   parakeet - Parakeet TDT 0.6B v2 via CoreML, uses Apple Neural Engine
+  backend: whisper
+
+  # Path to whisper.cpp model in ggml format (whisper backend only)
+  # Relative paths are resolved from the working directory (project root for 'make run')
+  # Use absolute path or ~ prefix for installed models
+  model_path: models/ggml-base.en.bin
+
+  # Directory containing Parakeet CoreML models + vocabulary (parakeet backend only)
+  # Must contain: Preprocessor.mlmodelc, Encoder.mlmodelc, Decoder.mlmodelc,
+  #               JointDecision.mlmodelc, parakeet_vocab.json
+  # Download with: make parakeet-model
+  parakeet_model_dir: models/parakeet-tdt-v2
+
+# DEPRECATED: top-level model_path is supported for backward compatibility.
+# If set and transcribe.model_path is not, it will be used as transcribe.model_path.
+# model_path: models/ggml-base.en.bin
 
 # Global hotkey configuration
 hotkey:
@@ -15,9 +32,9 @@ hotkey:
 
 # Audio capture settings
 audio:
-  # Sample rate in Hz (whisper.cpp expects 16000)
+  # Sample rate in Hz (both backends expect 16000)
   sample_rate: 16000
-  # Number of channels (whisper.cpp expects mono)
+  # Number of channels (both backends expect mono)
   channels: 1
 
 # Text injection settings

@@ -158,8 +158,8 @@ func TestValidate(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "empty model path",
-			modify:  func(c *Config) { c.ModelPath = "" },
+			name:    "empty transcribe model path",
+			modify:  func(c *Config) { c.Transcribe.ModelPath = "" },
 			wantErr: true,
 		},
 	}
@@ -252,6 +252,131 @@ func TestWriteDefault_NoOpIfExists(t *testing.T) {
 	}
 	if string(data) != string(existingContent) {
 		t.Error("WriteDefault() should not overwrite existing config file")
+	}
+}
+
+func TestDefaultTranscribeConfig(t *testing.T) {
+	cfg := Default()
+
+	if cfg.Transcribe.Backend != "whisper" {
+		t.Errorf("Transcribe.Backend = %q, want %q", cfg.Transcribe.Backend, "whisper")
+	}
+	if cfg.Transcribe.ModelPath != "models/ggml-base.en.bin" {
+		t.Errorf("Transcribe.ModelPath = %q, want %q", cfg.Transcribe.ModelPath, "models/ggml-base.en.bin")
+	}
+	if cfg.Transcribe.ParakeetModelDir != "models/parakeet-tdt-v2" {
+		t.Errorf("Transcribe.ParakeetModelDir = %q, want %q", cfg.Transcribe.ParakeetModelDir, "models/parakeet-tdt-v2")
+	}
+}
+
+func TestLoadBackwardCompatModelPath(t *testing.T) {
+	// Old-style config with top-level model_path should map to Transcribe.ModelPath
+	yamlContent := `
+model_path: /custom/whisper.bin
+`
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.Transcribe.ModelPath != "/custom/whisper.bin" {
+		t.Errorf("Transcribe.ModelPath = %q, want %q", cfg.Transcribe.ModelPath, "/custom/whisper.bin")
+	}
+	if cfg.Transcribe.Backend != "whisper" {
+		t.Errorf("Transcribe.Backend = %q, want %q", cfg.Transcribe.Backend, "whisper")
+	}
+}
+
+func TestLoadNewStyleTranscribeConfig(t *testing.T) {
+	yamlContent := `
+transcribe:
+  backend: parakeet
+  parakeet_model_dir: /opt/models/parakeet
+`
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.Transcribe.Backend != "parakeet" {
+		t.Errorf("Transcribe.Backend = %q, want %q", cfg.Transcribe.Backend, "parakeet")
+	}
+	if cfg.Transcribe.ParakeetModelDir != "/opt/models/parakeet" {
+		t.Errorf("Transcribe.ParakeetModelDir = %q, want %q", cfg.Transcribe.ParakeetModelDir, "/opt/models/parakeet")
+	}
+}
+
+func TestLoadTranscribeExpandsTilde(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("cannot determine home directory")
+	}
+
+	yamlContent := `
+transcribe:
+  backend: parakeet
+  model_path: ~/models/whisper.bin
+  parakeet_model_dir: ~/models/parakeet
+`
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	expectedModelPath := filepath.Join(home, "models/whisper.bin")
+	if cfg.Transcribe.ModelPath != expectedModelPath {
+		t.Errorf("Transcribe.ModelPath = %q, want %q", cfg.Transcribe.ModelPath, expectedModelPath)
+	}
+	expectedParakeetDir := filepath.Join(home, "models/parakeet")
+	if cfg.Transcribe.ParakeetModelDir != expectedParakeetDir {
+		t.Errorf("Transcribe.ParakeetModelDir = %q, want %q", cfg.Transcribe.ParakeetModelDir, expectedParakeetDir)
+	}
+}
+
+func TestValidateWhisperBackendRequiresModelPath(t *testing.T) {
+	cfg := Default()
+	cfg.Transcribe.Backend = "whisper"
+	cfg.Transcribe.ModelPath = ""
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Validate() should fail when whisper backend has empty model_path")
+	}
+}
+
+func TestValidateParakeetBackendRequiresModelDir(t *testing.T) {
+	cfg := Default()
+	cfg.Transcribe.Backend = "parakeet"
+	cfg.Transcribe.ParakeetModelDir = ""
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Validate() should fail when parakeet backend has empty parakeet_model_dir")
+	}
+}
+
+func TestValidateUnknownBackendFails(t *testing.T) {
+	cfg := Default()
+	cfg.Transcribe.Backend = "invalid"
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Validate() should fail for unknown backend")
 	}
 }
 
