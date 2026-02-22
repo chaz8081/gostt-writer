@@ -1,6 +1,7 @@
 // firmware/esp32/main/usb_hid.c
 #include "usb_hid.h"
 #include "config.h"
+#include <stdbool.h>
 #include "esp_log.h"
 #include "tinyusb.h"
 #include "class/hid/hid_device.h"
@@ -209,11 +210,27 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
     (void)instance; (void)report_id; (void)report_type; (void)buffer; (void)bufsize;
 }
 
+// Wait for HID endpoint to be ready before sending a report.
+// Returns true if ready, false on timeout.
+static bool wait_hid_ready(uint32_t timeout_ms)
+{
+    TickType_t start = xTaskGetTickCount();
+    while (!tud_hid_ready()) {
+        if ((xTaskGetTickCount() - start) > pdMS_TO_TICKS(timeout_ms)) {
+            ESP_LOGW(TAG, "HID endpoint not ready (timeout %lu ms)", (unsigned long)timeout_ms);
+            return false;
+        }
+        vTaskDelay(1);
+    }
+    return true;
+}
+
 static void send_keyboard_report(uint8_t modifier, uint8_t keycode)
 {
     keyboard_report_t report = {0};
     report.modifier = modifier;
     if (keycode) report.keycodes[0] = keycode;
+    if (!wait_hid_ready(GOSTT_HID_READY_TIMEOUT_MS)) return;
     tud_hid_report(REPORT_ID_KEYBOARD, &report, sizeof(report));
     vTaskDelay(pdMS_TO_TICKS(GOSTT_KEY_PRESS_MS));
 }
@@ -221,12 +238,15 @@ static void send_keyboard_report(uint8_t modifier, uint8_t keycode)
 static void release_keyboard(void)
 {
     keyboard_report_t report = {0};
+    if (!wait_hid_ready(GOSTT_HID_READY_TIMEOUT_MS)) return;
     tud_hid_report(REPORT_ID_KEYBOARD, &report, sizeof(report));
     vTaskDelay(pdMS_TO_TICKS(GOSTT_KEY_GAP_MS));
 }
 
 int gostt_usb_hid_type_text(const char *text, size_t len)
 {
+    if (!text || len == 0) return -1;
+
     if (!tud_mounted()) {
         ESP_LOGW(TAG, "USB not mounted — cannot type");
         return -1;
@@ -263,11 +283,13 @@ int gostt_usb_hid_consumer_control(uint16_t usage_id)
     }
 
     // Press
+    if (!wait_hid_ready(GOSTT_HID_READY_TIMEOUT_MS)) return -1;
     tud_hid_report(REPORT_ID_CONSUMER, &usage_id, sizeof(usage_id));
-    vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(GOSTT_CONSUMER_PRESS_MS));
 
     // Release
     uint16_t zero = 0;
+    if (!wait_hid_ready(GOSTT_HID_READY_TIMEOUT_MS)) return -1;
     tud_hid_report(REPORT_ID_CONSUMER, &zero, sizeof(zero));
     return 0;
 }
@@ -280,7 +302,7 @@ int gostt_usb_hid_send_shortcut(uint8_t modifier, uint8_t keycode)
     }
 
     send_keyboard_report(modifier, keycode);
-    vTaskDelay(pdMS_TO_TICKS(10)); // hold a bit longer for shortcuts
+    vTaskDelay(pdMS_TO_TICKS(GOSTT_SHORTCUT_HOLD_MS));
     release_keyboard();
     return 0;
 }

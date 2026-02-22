@@ -14,6 +14,9 @@
 // USB HID typing cadence (ms)
 #define GOSTT_KEY_PRESS_MS          5
 #define GOSTT_KEY_GAP_MS            2
+#define GOSTT_SHORTCUT_HOLD_MS      10
+#define GOSTT_CONSUMER_PRESS_MS     10
+#define GOSTT_HID_READY_TIMEOUT_MS  50
 
 // LED GPIO (WS2812 on most ESP32-S3 dev boards)
 #define GOSTT_LED_GPIO              48
