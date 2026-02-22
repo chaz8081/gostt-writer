@@ -31,10 +31,16 @@ func main() {
 	// CLI flags
 	configPath := flag.String("config", "", "path to config file (default: ~/.config/gostt-writer/config.yaml)")
 	showVersion := flag.Bool("version", false, "print version and exit")
+	blePair := flag.Bool("ble-pair", false, "scan and pair with an ESP32-S3 BLE device")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Printf("gostt-writer %s\n", version)
+		return
+	}
+
+	if *blePair {
+		runBLEPairing()
 		return
 	}
 
@@ -266,4 +272,49 @@ func printBanner(cfg *config.Config) {
 	fmt.Printf("  Inject:  %s\n", cfg.Inject.Method)
 	fmt.Printf("  Log:     %s\n", cfg.LogLevel)
 	fmt.Println("====================")
+}
+
+// runBLEPairing scans for ESP32-S3 devices and performs ECDH key exchange.
+func runBLEPairing() {
+	fmt.Println("=== BLE Pairing ===")
+
+	adapter := ble.NewCoreBluetoothAdapter()
+
+	fmt.Println("Scanning for ESP32-S3 devices (5 seconds)...")
+	devices, err := ble.ScanForDevices(adapter, 5*time.Second)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Scan failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	if len(devices) == 0 {
+		fmt.Println("No devices found. Make sure your ESP32-S3 is powered on and in range.")
+		os.Exit(1)
+	}
+
+	fmt.Printf("Found %d device(s):\n", len(devices))
+	for i, d := range devices {
+		fmt.Printf("  [%d] %s (%s) RSSI: %d\n", i+1, d.Name, d.MAC, d.RSSI)
+	}
+
+	// Use the first device (TODO: prompt user to pick when multiple)
+	target := devices[0]
+	fmt.Printf("\nPairing with %s (%s)...\n", target.Name, target.MAC)
+
+	result, err := ble.Pair(adapter, target.MAC, ble.DefaultPairOptions())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Pairing failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	secretHex := hex.EncodeToString(result.SharedSecret)
+	fmt.Println("\nPairing successful!")
+	fmt.Printf("  Device MAC:    %s\n", result.DeviceMAC)
+	fmt.Printf("  Shared Secret: %s\n", secretHex)
+	fmt.Println("\nAdd to your config (~/.config/gostt-writer/config.yaml):")
+	fmt.Println("  inject:")
+	fmt.Println("    method: ble")
+	fmt.Println("    ble:")
+	fmt.Printf("      device_mac: %q\n", result.DeviceMAC)
+	fmt.Printf("      shared_secret: %q\n", secretHex)
 }
