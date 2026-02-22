@@ -16,14 +16,18 @@ GGML_METAL_PATH_RESOURCES := $(abspath $(WHISPER_DIR))
 LIBRARY_PATH_DARWIN := $(abspath $(WHISPER_BUILD)/src):$(abspath $(WHISPER_BUILD)/ggml/src):$(abspath $(WHISPER_BUILD)/ggml/src/ggml-blas):$(abspath $(WHISPER_BUILD)/ggml/src/ggml-metal)
 
 # macOS linker flags
-EXT_LDFLAGS := -framework Foundation -framework Metal -framework MetalKit -lggml-metal -lggml-blas
+EXT_LDFLAGS := -framework Foundation -framework Metal -framework MetalKit -framework CoreML -lggml-metal -lggml-blas
 
 # Model URL
 MODEL_NAME := ggml-base.en.bin
 MODEL_URL := https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$(MODEL_NAME)
 MODEL_PATH := $(MODELS_DIR)/$(MODEL_NAME)
 
-.PHONY: all whisper model build run clean test help
+# Parakeet TDT CoreML model
+PARAKEET_DIR := $(MODELS_DIR)/parakeet-tdt-v2
+PARAKEET_REPO := https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v2-coreml
+
+.PHONY: all whisper model parakeet-model build run clean test help
 
 all: whisper model build
 
@@ -31,6 +35,7 @@ help:
 	@echo "gostt-writer build targets:"
 	@echo "  make whisper  - Build whisper.cpp static library (Metal + Accelerate)"
 	@echo "  make model    - Download ggml-base.en.bin model"
+	@echo "  make parakeet-model - Download Parakeet TDT CoreML models"
 	@echo "  make build    - Build gostt-writer binary"
 	@echo "  make run      - Build and run"
 	@echo "  make test     - Run all tests"
@@ -53,13 +58,33 @@ $(MODEL_PATH):
 	curl -L -o $(MODEL_PATH) $(MODEL_URL)
 	@echo "Model downloaded to $(MODEL_PATH)"
 
+parakeet-model:
+	@echo "Downloading Parakeet TDT v2 CoreML models..."
+	@if [ -d "$(PARAKEET_DIR)/Encoder.mlmodelc" ]; then \
+		echo "Parakeet models already present at $(PARAKEET_DIR)"; \
+		exit 0; \
+	fi
+	@mkdir -p $(PARAKEET_DIR)
+	@TMPDIR=$$(mktemp -d) && \
+	echo "Cloning from HuggingFace (sparse checkout)..." && \
+	git clone --filter=blob:none --no-checkout $(PARAKEET_REPO) $$TMPDIR && \
+	cd $$TMPDIR && \
+	git sparse-checkout set Preprocessor.mlmodelc Encoder.mlmodelc Decoder.mlmodelc JointDecision.mlmodelc parakeet_vocab.json && \
+	git checkout && \
+	git lfs pull && \
+	echo "Copying models to $(PARAKEET_DIR)..." && \
+	cp -R Preprocessor.mlmodelc Encoder.mlmodelc Decoder.mlmodelc JointDecision.mlmodelc parakeet_vocab.json $(abspath $(PARAKEET_DIR))/ && \
+	cd - > /dev/null && \
+	rm -rf $$TMPDIR && \
+	echo "Parakeet models downloaded to $(PARAKEET_DIR)"
+
 build:
 	@mkdir -p $(BIN_DIR)
 	CGO_ENABLED=1 \
 	C_INCLUDE_PATH=$(INCLUDE_PATH) \
 	LIBRARY_PATH=$(LIBRARY_PATH_DARWIN) \
 	GGML_METAL_PATH_RESOURCES=$(GGML_METAL_PATH_RESOURCES) \
-	go build -ldflags "-X main.version=$(VERSION) -extldflags '-framework Foundation -framework Metal -framework MetalKit -lggml-metal -lggml-blas'" \
+	go build -ldflags "-X main.version=$(VERSION) -extldflags '$(EXT_LDFLAGS)'" \
 		-o $(BINARY) ./cmd/gostt-writer
 	@echo "Built $(BINARY)"
 
@@ -71,7 +96,7 @@ test:
 	C_INCLUDE_PATH=$(INCLUDE_PATH) \
 	LIBRARY_PATH=$(LIBRARY_PATH_DARWIN) \
 	GGML_METAL_PATH_RESOURCES=$(GGML_METAL_PATH_RESOURCES) \
-	go test -ldflags "-extldflags '-framework Foundation -framework Metal -framework MetalKit -lggml-metal -lggml-blas'" \
+	go test -ldflags "-extldflags '$(EXT_LDFLAGS)'" \
 		-v ./...
 
 clean:
