@@ -1,6 +1,7 @@
 package ble
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -200,4 +201,78 @@ func (c *Client) Close() error {
 	}
 	c.connected = false
 	return nil
+}
+
+// backoffDelay returns the reconnection delay for attempt n, capped at maxSeconds.
+func backoffDelay(attempt int, maxSeconds int) time.Duration {
+	delay := time.Duration(1<<uint(attempt)) * time.Second
+	max := time.Duration(maxSeconds) * time.Second
+	if delay > max {
+		return max
+	}
+	return delay
+}
+
+// Connect establishes the initial BLE connection to the paired device.
+func (c *Client) Connect() error {
+	if err := c.adapter.Enable(); err != nil {
+		return fmt.Errorf("ble: enable adapter: %w", err)
+	}
+
+	ctx := context.Background()
+	conn, err := c.adapter.Connect(ctx, c.deviceMAC)
+	if err != nil {
+		return fmt.Errorf("ble: connect to %s: %w", c.deviceMAC, err)
+	}
+
+	if err := c.setConnected(conn); err != nil {
+		return fmt.Errorf("ble: set connected: %w", err)
+	}
+
+	// Register disconnect handler for auto-reconnect
+	conn.OnDisconnect(func() {
+		slog.Warn("[BLE] disconnected, reconnecting...")
+		c.setDisconnected()
+		go c.reconnectLoop()
+	})
+
+	slog.Info("[BLE] connected", "mac", c.deviceMAC)
+	return nil
+}
+
+// reconnectLoop attempts to reconnect with exponential backoff.
+func (c *Client) reconnectLoop() {
+	for attempt := 0; ; attempt++ {
+		// On the first attempt, try immediately; subsequent attempts use backoff.
+		if attempt > 0 {
+			delay := backoffDelay(attempt-1, c.opts.ReconnectMax)
+			slog.Info("[BLE] reconnect backoff", "attempt", attempt+1, "delay", delay)
+			time.Sleep(delay)
+		}
+
+		ctx := context.Background()
+		conn, err := c.adapter.Connect(ctx, c.deviceMAC)
+		if err != nil {
+			slog.Warn("[BLE] reconnect failed", "error", err, "attempt", attempt+1)
+			continue
+		}
+
+		if err := c.setConnected(conn); err != nil {
+			slog.Warn("[BLE] reconnect set connected failed", "error", err, "attempt", attempt+1)
+			continue
+		}
+
+		slog.Info("[BLE] reconnected", "mac", c.deviceMAC)
+
+		// Register disconnect handler again
+		conn.OnDisconnect(func() {
+			slog.Warn("[BLE] disconnected, reconnecting...")
+			c.setDisconnected()
+			go c.reconnectLoop()
+		})
+
+		// Flush queued messages
+		c.flushQueue()
+		return
+	}
 }
