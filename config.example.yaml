@@ -2,7 +2,9 @@
 # Default location: ~/.config/gostt-writer/config.yaml
 
 # Path to whisper.cpp model in ggml format
-model_path: ~/.local/share/gostt-writer/models/ggml-base.en.bin
+# Relative paths are resolved from the working directory (project root for 'make run')
+# Use absolute path or ~ prefix for installed models
+model_path: models/ggml-base.en.bin
 
 # Global hotkey configuration
 hotkey:

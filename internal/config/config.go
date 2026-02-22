@@ -51,11 +51,8 @@ func DefaultConfigPath() string {
 
 // Default returns a Config with sensible default values.
 func Default() *Config {
-	home, _ := os.UserHomeDir()
-	modelPath := filepath.Join(home, ".local", "share", "gostt-writer", "models", "ggml-base.en.bin")
-
 	return &Config{
-		ModelPath: modelPath,
+		ModelPath: "models/ggml-base.en.bin",
 		Hotkey: HotkeyConfig{
 			Keys: []string{"ctrl", "shift", "r"},
 			Mode: "hold",
