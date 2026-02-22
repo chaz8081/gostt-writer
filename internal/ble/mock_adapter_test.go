@@ -2,6 +2,7 @@ package ble
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 )
@@ -62,7 +63,7 @@ func (c *mockConnection) DiscoverCharacteristic(serviceUUID, charUUID string) (C
 	case ResponseCharUUID:
 		return c.respChar, nil
 	default:
-		return c.txChar, nil // fallback for tests
+		return nil, fmt.Errorf("mock: unknown characteristic UUID %q", charUUID)
 	}
 }
 
