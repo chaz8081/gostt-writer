@@ -42,27 +42,39 @@ env:
 
 tasks:
   default:
-    desc: Build everything (whisper.cpp + model + binary)
+    desc: Build everything (whisper.cpp + whisper model + binary)
     deps: [whisper, whisper-model, build]
 
   install:
     desc: Build, download models, and install to INSTALL_DIR (default /usr/local/bin)
     deps: [whisper]
     cmds:
+      - task models
+      - task build
+      - |
+        echo "Installing gostt-writer to {{.INSTALL_DIR}}..."
+        mkdir -p {{.INSTALL_DIR}}
+        cp {{.BINARY}} {{.INSTALL_DIR}}/gostt-writer
+        echo "Installed gostt-writer to {{.INSTALL_DIR}}/gostt-writer"
+    interactive: true
+
+  models:
+    desc: Download transcription models (interactive)
+    cmds:
       - |
         OS="$(uname -s)"
         if [ "$OS" = "Darwin" ]; then
           echo ""
-          echo "Which transcription backend would you like to install?"
-          echo "  [1] whisper  - CPU/GPU via Metal (default)"
-          echo "  [2] parakeet - Apple Neural Engine via CoreML (faster, lower WER)"
+          echo "Which transcription model(s) would you like to download?"
+          echo "  [1] whisper  - CPU/GPU via Metal (~140 MB)"
+          echo "  [2] parakeet - Apple Neural Engine via CoreML (~443 MB)"
           echo "  [3] both"
           echo ""
           printf "Choose [1/2/3] (default: 1): "
           read -r choice
           choice="${choice:-1}"
         else
-          echo "Non-macOS detected — installing with whisper backend."
+          echo "Non-macOS detected — downloading whisper model."
           choice="1"
         fi
 
@@ -82,13 +94,6 @@ tasks:
             exit 1
             ;;
         esac
-
-        task build
-
-        echo "Installing gostt-writer to {{.INSTALL_DIR}}..."
-        mkdir -p {{.INSTALL_DIR}}
-        cp {{.BINARY}} {{.INSTALL_DIR}}/gostt-writer
-        echo "Installed gostt-writer to {{.INSTALL_DIR}}/gostt-writer"
     interactive: true
 
   backend:
@@ -169,7 +174,6 @@ tasks:
       - test -f {{.WHISPER_BUILD}}/src/libwhisper.a
 
   whisper-model:
-    desc: Download the whisper base.en model (~140 MB)
     cmds:
       - mkdir -p {{.MODELS_DIR}}
       - curl -L -o {{.MODEL_PATH}} {{.MODEL_URL}}
@@ -177,7 +181,6 @@ tasks:
       - test -f {{.MODEL_PATH}}
 
   parakeet-model:
-    desc: Download Parakeet TDT v2 CoreML models (~443 MB)
     cmds:
       - mkdir -p {{.PARAKEET_DIR}}
       - |

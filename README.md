@@ -181,8 +181,9 @@ To use Parakeet:
 
 1. Download the CoreML models:
    ```bash
-   task parakeet-model
+   task models
    ```
+   Choose option **2** (parakeet) or **3** (both).
 2. Switch the backend:
    ```bash
    task backend
@@ -197,18 +198,17 @@ To use Parakeet:
 
 Run `task --list` to see all available tasks:
 
-| Task                  | Description                                              |
-| --------------------- | -------------------------------------------------------- |
-| `task`                | Build everything (whisper.cpp + model + binary)          |
-| `task install`        | Build, download models, and install to /usr/local/bin    |
-| `task backend`        | Switch the active transcription backend in your config   |
-| `task build`          | Build the gostt-writer binary                            |
-| `task run`            | Build and run gostt-writer                               |
-| `task test`           | Run all tests                                            |
-| `task whisper`        | Build whisper.cpp static library (Metal + Accelerate)    |
-| `task whisper-model`  | Download the whisper base.en model (~140 MB)             |
-| `task parakeet-model` | Download Parakeet TDT v2 CoreML models (~443 MB)         |
-| `task clean`          | Remove build artifacts                                   |
+| Task             | Description                                              |
+| ---------------- | -------------------------------------------------------- |
+| `task`           | Build everything (whisper.cpp + whisper model + binary)  |
+| `task install`   | Build, download models, and install to /usr/local/bin    |
+| `task models`    | Download transcription models (interactive)              |
+| `task backend`   | Switch the active transcription backend in your config   |
+| `task build`     | Build the gostt-writer binary                            |
+| `task run`       | Build and run gostt-writer                               |
+| `task test`      | Run all tests                                            |
+| `task whisper`   | Build whisper.cpp static library (Metal + Accelerate)    |
+| `task clean`     | Remove build artifacts                                   |
 
 ## Version
 
