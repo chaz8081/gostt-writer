@@ -255,6 +255,12 @@ tasks:
       - ./{{.BINARY}} --ble-pair
     interactive: true
 
+  fw-test:
+    desc: Run firmware host-side unit tests
+    dir: firmware/esp32/test
+    cmds:
+      - make test_proto
+
   fw-build:
     desc: Build ESP32-S3 firmware
     dir: firmware/esp32
