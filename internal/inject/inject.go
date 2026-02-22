@@ -13,6 +13,9 @@ type TextInjector interface {
 	Inject(text string) error
 }
 
+// Compile-time interface satisfaction check.
+var _ TextInjector = (*Injector)(nil)
+
 // Injector handles typing or pasting text into the active application.
 type Injector struct {
 	method string // "type" or "paste"

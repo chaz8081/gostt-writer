@@ -10,8 +10,15 @@ type BLEInjector struct {
 	sender BLESender
 }
 
+// Compile-time interface satisfaction check.
+var _ TextInjector = (*BLEInjector)(nil)
+
 // NewBLEInjector creates a BLEInjector backed by the given sender.
+// Panics if sender is nil (programmer error).
 func NewBLEInjector(sender BLESender) *BLEInjector {
+	if sender == nil {
+		panic("inject: NewBLEInjector called with nil sender")
+	}
 	return &BLEInjector{sender: sender}
 }
 

@@ -1,6 +1,9 @@
 package inject
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 // mockBLESender records Send calls.
 type mockBLESender struct {
@@ -36,4 +39,28 @@ func TestBLEInjectorInjectEmpty(t *testing.T) {
 	if len(mock.sent) != 0 {
 		t.Errorf("sent = %v, want empty", mock.sent)
 	}
+}
+
+// errBLESender always returns a fixed error.
+type errBLESender struct{ err error }
+
+func (e *errBLESender) Send(string) error { return e.err }
+
+func TestBLEInjectorInjectError(t *testing.T) {
+	want := errors.New("ble: disconnected")
+	inj := NewBLEInjector(&errBLESender{err: want})
+	got := inj.Inject("hello")
+	if got != want {
+		t.Errorf("Inject() error = %v, want %v", got, want)
+	}
+}
+
+func TestNewBLEInjectorNilSenderPanics(t *testing.T) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Error("NewBLEInjector(nil) did not panic")
+		}
+	}()
+	NewBLEInjector(nil)
 }
