@@ -158,14 +158,23 @@ func Encrypt(key, plaintext []byte) (iv, ciphertext, tag []byte, err error) {
 
 	// Split: ciphertext is sealed[:len-tagSize], tag is sealed[len-tagSize:]
 	tagSize := aead.Overhead() // 16
-	ciphertext = sealed[:len(sealed)-tagSize]
-	tag = sealed[len(sealed)-tagSize:]
+	ct := make([]byte, len(sealed)-tagSize)
+	copy(ct, sealed[:len(sealed)-tagSize])
+	t := make([]byte, tagSize)
+	copy(t, sealed[len(sealed)-tagSize:])
 
-	return iv, ciphertext, tag, nil
+	return iv, ct, t, nil
 }
 
 // Decrypt decrypts ciphertext with AES-256-GCM using separate iv, ciphertext, and tag.
 func Decrypt(key, iv, ciphertext, tag []byte) ([]byte, error) {
+	if len(iv) != 12 {
+		return nil, fmt.Errorf("ble/crypto: IV must be 12 bytes, got %d", len(iv))
+	}
+	if len(tag) != 16 {
+		return nil, fmt.Errorf("ble/crypto: tag must be 16 bytes, got %d", len(tag))
+	}
+
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, fmt.Errorf("ble/crypto: new cipher: %w", err)

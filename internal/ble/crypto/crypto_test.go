@@ -128,6 +128,71 @@ func TestDecryptTamperedCiphertext(t *testing.T) {
 	}
 }
 
+func TestParseCompressedPublicKeyWrongLength(t *testing.T) {
+	data := make([]byte, 32) // wrong length, should be 33
+	_, err := ParseCompressedPublicKey(data)
+	if err == nil {
+		t.Error("ParseCompressedPublicKey(32 bytes) should fail")
+	}
+}
+
+func TestParseCompressedPublicKeyBadPrefix(t *testing.T) {
+	data := make([]byte, 33)
+	data[0] = 0x04 // invalid prefix for compressed key
+	_, err := ParseCompressedPublicKey(data)
+	if err == nil {
+		t.Error("ParseCompressedPublicKey(prefix 0x04) should fail")
+	}
+}
+
+func TestEncryptEmptyPlaintext(t *testing.T) {
+	key := make([]byte, 32)
+	key[0] = 0xAB
+
+	iv, ciphertext, tag, err := Encrypt(key, []byte{})
+	if err != nil {
+		t.Fatalf("Encrypt(empty) error = %v", err)
+	}
+	if len(iv) != 12 {
+		t.Errorf("IV length = %d, want 12", len(iv))
+	}
+	if len(tag) != 16 {
+		t.Errorf("tag length = %d, want 16", len(tag))
+	}
+
+	decrypted, err := Decrypt(key, iv, ciphertext, tag)
+	if err != nil {
+		t.Fatalf("Decrypt(empty) error = %v", err)
+	}
+	if len(decrypted) != 0 {
+		t.Errorf("Decrypt(empty) = %q, want empty", decrypted)
+	}
+}
+
+func TestDecryptInvalidIVLength(t *testing.T) {
+	key := make([]byte, 32)
+	iv := make([]byte, 10) // wrong length, should be 12
+	ciphertext := []byte("fake")
+	tag := make([]byte, 16)
+
+	_, err := Decrypt(key, iv, ciphertext, tag)
+	if err == nil {
+		t.Error("Decrypt() with 10-byte IV should fail")
+	}
+}
+
+func TestDecryptInvalidTagLength(t *testing.T) {
+	key := make([]byte, 32)
+	iv := make([]byte, 12)
+	ciphertext := []byte("fake")
+	tag := make([]byte, 10) // wrong length, should be 16
+
+	_, err := Decrypt(key, iv, ciphertext, tag)
+	if err == nil {
+		t.Error("Decrypt() with 10-byte tag should fail")
+	}
+}
+
 func TestParseCompressedPublicKey(t *testing.T) {
 	_, pub, err := GenerateKeyPair()
 	if err != nil {
