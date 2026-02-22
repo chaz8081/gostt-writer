@@ -1,0 +1,33 @@
+# Worktrees
+.worktrees/
+
+# Go build artifacts
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go test binary
+*.test
+
+# Go coverage
+*.out
+coverage.html
+
+# Whisper models (large binary files)
+models/
+
+# whisper.cpp build artifacts
+third_party/whisper.cpp/build/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
