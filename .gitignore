@@ -25,6 +25,13 @@ models/
 # whisper.cpp build artifacts
 third_party/whisper.cpp/build/
 
+# Firmware test binaries
+firmware/esp32/test/test_proto
+
+# ESP-IDF build artifacts
+firmware/esp32/build/
+firmware/esp32/managed_components/
+
 # OS files
 .DS_Store
 Thumbs.db
