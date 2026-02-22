@@ -10,7 +10,6 @@ static const char *TAG = "gostt-led";
 
 static led_strip_handle_t s_led_strip = NULL;
 static gostt_led_state_t s_state = GOSTT_LED_OFF;
-static gostt_led_state_t s_prev_state = GOSTT_LED_OFF;
 static volatile bool s_flash_typing = false;
 static volatile bool s_flash_error = false;
 
@@ -33,7 +32,6 @@ static void led_task(void *arg)
 {
     (void)arg;
     bool blink_on = false;
-    int tick = 0;
 
     while (1) {
         // Handle one-shot flashes
@@ -73,6 +71,9 @@ static void led_task(void *arg)
             case GOSTT_LED_TYPING:
                 set_color(40, 40, 40); // white
                 break;
+            case GOSTT_LED_ERROR:
+                set_color(60, 0, 0); // solid red
+                break;
             case GOSTT_LED_FACTORY_RESET:
                 if (blink_on) set_color(60, 0, 0);
                 else set_color(0, 0, 60);
@@ -83,8 +84,7 @@ static void led_task(void *arg)
                 break;
         }
 
-        // Tick at ~10Hz for smooth blink. Advertising blinks at ~1Hz (every 5 ticks).
-        tick++;
+        // Advertising blinks at ~1Hz (500ms delay); all others update at ~10Hz (100ms).
         if (s_state == GOSTT_LED_ADVERTISING) {
             vTaskDelay(pdMS_TO_TICKS(500));
         } else {
@@ -118,7 +118,6 @@ int gostt_led_init(void)
 
 void gostt_led_set(gostt_led_state_t state)
 {
-    s_prev_state = s_state;
     s_state = state;
 }
 
