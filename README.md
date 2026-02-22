@@ -1,0 +1,168 @@
+# gostt-writer
+
+Local real-time dictation for macOS. Press a hotkey, speak, and your words are typed into the active application. All processing happens on-device using [whisper.cpp](https://github.com/ggerganov/whisper.cpp) -- nothing is sent to the cloud.
+
+## Prerequisites
+
+- macOS on Apple Silicon (M1 or later)
+- [Go 1.21+](https://go.dev/dl/)
+- [CMake](https://cmake.org/) (`brew install cmake`)
+- Xcode Command Line Tools (`xcode-select --install`)
+
+## Build
+
+Clone the repo and build everything (whisper.cpp, model download, and the binary):
+
+```bash
+git clone --recurse-submodules https://github.com/chaz8081/gostt-writer.git
+cd gostt-writer
+make all
+```
+
+This takes a few minutes the first time. It downloads the ~140MB whisper base.en model and compiles whisper.cpp with Metal acceleration.
+
+If you already cloned without `--recurse-submodules`:
+
+```bash
+git submodule update --init --recursive
+make all
+```
+
+## macOS Permissions
+
+gostt-writer needs two permissions to function:
+
+**Accessibility** (for global hotkey and keystroke injection):
+1. Open **System Settings > Privacy & Security > Accessibility**
+2. Click **+** and add your **terminal app** (Terminal.app, iTerm2, Ghostty, etc.)
+3. Toggle it on
+
+**Microphone** (for audio capture):
+1. Open **System Settings > Privacy & Security > Microphone**
+2. Add your terminal app if it isn't already listed
+3. Toggle it on
+
+You may need to restart your terminal after granting permissions.
+
+## Quick Start
+
+```bash
+make run
+```
+
+Then press `Ctrl+Shift+R`, speak, and release. Your words will be typed into whatever application has focus.
+
+Press `Ctrl+C` to quit.
+
+## Running in the Background with tmux
+
+gostt-writer runs in the foreground by default. If you want it running persistently (surviving terminal closes, SSH disconnects, etc.), tmux is the simplest approach.
+
+### Install tmux
+
+```bash
+brew install tmux
+```
+
+### Start gostt-writer in a tmux session
+
+```bash
+tmux new-session -d -s gostt 'cd /path/to/gostt-writer && ./bin/gostt-writer'
+```
+
+This starts gostt-writer in a detached tmux session named "gostt". It runs in the background immediately -- you can close your terminal and it keeps running.
+
+Replace `/path/to/gostt-writer` with the actual path to your clone.
+
+### View logs (attach to the session)
+
+```bash
+tmux attach -t gostt
+```
+
+You'll see the live log output. To detach without stopping gostt-writer, press `Ctrl+B` then `D`.
+
+### Stop gostt-writer
+
+Attach to the session and press `Ctrl+C`:
+
+```bash
+tmux attach -t gostt
+# Now press Ctrl+C to stop
+```
+
+Or kill the session from outside:
+
+```bash
+tmux kill-session -t gostt
+```
+
+### Check if it's running
+
+```bash
+tmux has-session -t gostt 2>/dev/null && echo "running" || echo "not running"
+```
+
+### Restart after a rebuild
+
+```bash
+tmux kill-session -t gostt 2>/dev/null
+make build
+tmux new-session -d -s gostt 'cd /path/to/gostt-writer && ./bin/gostt-writer'
+```
+
+### tmux cheat sheet (just the basics)
+
+| Action | Command |
+|---|---|
+| Start a new session | `tmux new-session -d -s gostt '...'` |
+| Attach to session | `tmux attach -t gostt` |
+| Detach (while attached) | `Ctrl+B`, then `D` |
+| List sessions | `tmux ls` |
+| Kill session | `tmux kill-session -t gostt` |
+
+## Configuration
+
+On first run, gostt-writer creates a default config at `~/.config/gostt-writer/config.yaml`. You can also specify a custom path:
+
+```bash
+./bin/gostt-writer --config /path/to/config.yaml
+```
+
+See [`config.example.yaml`](config.example.yaml) for all options with documentation. The key settings:
+
+| Setting | Default | Description |
+|---|---|---|
+| `model_path` | `models/ggml-base.en.bin` | Path to whisper model |
+| `hotkey.keys` | `["ctrl", "shift", "r"]` | Key combination |
+| `hotkey.mode` | `hold` | `hold` = push-to-talk, `toggle` = press to start/stop |
+| `inject.method` | `type` | `type` = keystrokes, `paste` = clipboard + Cmd+V |
+| `log_level` | `info` | `debug`, `info`, `warn`, or `error` |
+
+## How It Works
+
+1. A global hotkey listener waits for your configured key combo
+2. On press, audio is captured from your default microphone at 16kHz mono
+3. On release, the audio is sent to whisper.cpp for local transcription (Metal-accelerated)
+4. The transcribed text is injected into the active application via keystroke simulation
+
+Transcription happens asynchronously -- you can start speaking again while the previous result is being typed.
+
+## Make Targets
+
+| Target | Description |
+|---|---|
+| `make all` | Build everything (whisper + model + binary) |
+| `make build` | Build the gostt-writer binary |
+| `make run` | Build and run |
+| `make test` | Run all tests |
+| `make whisper` | Build whisper.cpp static library |
+| `make model` | Download the whisper model |
+| `make clean` | Remove build artifacts |
+| `make help` | Show all targets |
+
+## Version
+
+```bash
+./bin/gostt-writer --version
+```
