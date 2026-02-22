@@ -15,6 +15,7 @@
 #include "mbedtls/platform_util.h"
 
 #include <string.h>
+#include <limits.h>
 
 static const char *TAG = "gostt-crypto";
 
@@ -56,7 +57,10 @@ static int save_key_to_nvs(const gostt_crypto_ctx_t *ctx, const uint8_t *peer_pu
     }
 
     if (peer_pubkey) {
-        nvs_set_blob(handle, GOSTT_NVS_KEY_PEER_PUB, peer_pubkey, GOSTT_COMPRESSED_PUBKEY_LEN);
+        err = nvs_set_blob(handle, GOSTT_NVS_KEY_PEER_PUB, peer_pubkey, GOSTT_COMPRESSED_PUBKEY_LEN);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "NVS write peer pubkey failed: %s", esp_err_to_name(err));
+        }
     }
 
     nvs_commit(handle);
@@ -135,6 +139,11 @@ int gostt_crypto_pair(gostt_crypto_ctx_t *ctx,
             mbedtls_ecp_point_free(&peer_Q);
             goto cleanup;
         }
+        if (mbedtls_ecp_check_pubkey(&ecdh.MBEDTLS_PRIVATE(grp), &peer_Q) != 0) {
+            ESP_LOGE(TAG, "Peer pubkey not on curve");
+            mbedtls_ecp_point_free(&peer_Q);
+            goto cleanup;
+        }
         mbedtls_ecp_copy(&ecdh.MBEDTLS_PRIVATE(Qp), &peer_Q);
         mbedtls_ecp_point_free(&peer_Q);
     }
@@ -203,6 +212,10 @@ int gostt_crypto_decrypt(const gostt_crypto_ctx_t *ctx,
         return -1;
     }
 
+    if (ciphertext_len == 0 || ciphertext_len > INT_MAX) {
+        return -1;
+    }
+
     mbedtls_gcm_context gcm;
     mbedtls_gcm_init(&gcm);
 
@@ -242,7 +255,7 @@ int gostt_crypto_erase(gostt_crypto_ctx_t *ctx)
         nvs_close(handle);
     }
 
-    memset(ctx, 0, sizeof(*ctx));
+    mbedtls_platform_zeroize(ctx, sizeof(*ctx));
     ESP_LOGI(TAG, "All keys erased");
     return 0;
 }
