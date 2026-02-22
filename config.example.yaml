@@ -1,0 +1,30 @@
+# gostt-writer configuration
+# Default location: ~/.config/gostt-writer/config.yaml
+
+# Path to whisper.cpp model in ggml format
+# Relative paths are resolved from the working directory (project root for 'make run')
+# Use absolute path or ~ prefix for installed models
+model_path: models/ggml-base.en.bin
+
+# Global hotkey configuration
+hotkey:
+  # Key combination (modifier keys + trigger key)
+  keys: ["ctrl", "shift", "r"]
+  # Mode: "hold" = push-to-talk, "toggle" = press to start/stop
+  mode: hold
+
+# Audio capture settings
+audio:
+  # Sample rate in Hz (whisper.cpp expects 16000)
+  sample_rate: 16000
+  # Number of channels (whisper.cpp expects mono)
+  channels: 1
+
+# Text injection settings
+inject:
+  # Method: "type" = keystroke simulation (preserves clipboard),
+  #         "paste" = clipboard + Cmd+V (faster but overwrites clipboard)
+  method: type
+
+# Log level: debug, info, warn, error
+log_level: info
