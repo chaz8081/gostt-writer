@@ -165,6 +165,40 @@ See [`config.example.yaml`](config.example.yaml) for all options with documentat
 
 Transcription happens asynchronously -- you can start speaking again while the previous result is being typed.
 
+## Privacy
+
+gostt-writer is designed to be fully offline. After installation, the application makes **zero network connections**. No audio, transcription results, configuration, or telemetry data ever leaves your machine.
+
+### What we guarantee
+
+- **No network access at runtime.** The application does not import Go's `net/http` or any networking package. There are no outbound connections, no DNS lookups, no listening sockets.
+- **No telemetry or analytics.** No usage data, crash reports, or diagnostics are collected or transmitted.
+- **Audio stays in memory.** Captured audio is held in RAM only, processed locally, and discarded. It is never written to disk or sent anywhere.
+- **Minimal filesystem footprint.** The app reads its config from `~/.config/gostt-writer/config.yaml` and its models from the configured model directory. It writes only to the config directory (to create a default config on first run). Nothing else.
+- **No environment variable harvesting.** The application does not read environment variables at runtime.
+- **Dependencies are clean.** All third-party libraries (malgo, whisper.cpp, robotgo, gohook, yaml.v3) have been audited. None contain telemetry, analytics, or networking code. The whisper.cpp submodule includes an optional RPC backend (`ggml-rpc`) but it is **not compiled** -- the build explicitly excludes it.
+
+### When the network is used
+
+The **only** network access occurs during setup, when you explicitly download models:
+
+- `task models` downloads whisper and/or Parakeet models from [HuggingFace](https://huggingface.co)
+- This is manual and user-initiated -- it never happens automatically
+
+After models are downloaded, you can run gostt-writer with no internet connection.
+
+### Verifying this yourself
+
+You can confirm the offline guarantee:
+
+- **Block the binary with your firewall** (Little Snitch, Lulu, or macOS Application Firewall) -- gostt-writer will function identically with all network access blocked.
+- **Search the source code** -- `grep -r 'net/http\|net.Dial\|http.Get\|http.Post' internal/ cmd/` returns zero results in application code.
+- **Monitor with `nettop`** -- run `nettop -p $(pgrep gostt-writer)` while using the app. You will see zero network activity.
+
+### One caveat: macOS system-level telemetry
+
+Apple's CoreML and Metal frameworks may send anonymous performance data as part of macOS system-level analytics. This is controlled by **System Settings > Privacy & Security > Analytics & Improvements** and applies to any application using these frameworks. gostt-writer does not initiate or control this behavior.
+
 ## Backends
 
 ### Whisper (default)
