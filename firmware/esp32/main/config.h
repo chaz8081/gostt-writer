@@ -43,4 +43,8 @@
 // Mute defaults
 #define GOSTT_DEFAULT_MUTE_USAGE_ID 0x00E2  // USB HID Consumer Control: Mute
 
+// BLE command types (must match Go app)
+#define GOSTT_CMD_MUTE_TOGGLE    1
+#define GOSTT_CMD_MUTE_CONFIGURE 2
+
 #endif // GOSTT_KBD_CONFIG_H
