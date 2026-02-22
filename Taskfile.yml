@@ -230,6 +230,16 @@ tasks:
         -ldflags "-extldflags '{{.EXT_LDFLAGS}}'"
         -v ./...
 
+  bench:
+    desc: Run transcription benchmarks (RTF, WER, latency)
+    deps: [whisper]
+    cmds:
+      - >-
+        go test
+        -ldflags "-extldflags '{{.EXT_LDFLAGS}}'"
+        -bench=. -benchtime=3x -run='^$' -v
+        ./internal/transcribe/
+
   clean:
     desc: Remove build artifacts
     cmds:

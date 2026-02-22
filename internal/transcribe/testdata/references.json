@@ -1,0 +1,32 @@
+{
+  "samples": [
+    {
+      "file": "short.wav",
+      "label": "short",
+      "transcript": "The kubernetes cluster ran three pods on each node.",
+      "duration_sec": 2.76,
+      "source": "macOS TTS (Samantha)"
+    },
+    {
+      "file": "medium.wav",
+      "label": "medium",
+      "transcript": "The webhook endpoint returned a four hundred error because the payload exceeded the maximum size limit for JSON serialization.",
+      "duration_sec": 6.87,
+      "source": "macOS TTS (Samantha)"
+    },
+    {
+      "file": "long.wav",
+      "label": "long",
+      "transcript": "After deploying the micro services to production we noticed that the gRPC connections were timing out. The root cause was a misconfigured load balancer that did not support HTTP two multiplexing.",
+      "duration_sec": 11.56,
+      "source": "macOS TTS (Samantha)"
+    },
+    {
+      "file": "../../../third_party/whisper.cpp/samples/jfk.wav",
+      "label": "jfk",
+      "transcript": "And so my fellow Americans ask not what your country can do for you ask what you can do for your country.",
+      "duration_sec": 11.0,
+      "source": "JFK inaugural address (existing test fixture)"
+    }
+  ]
+}
