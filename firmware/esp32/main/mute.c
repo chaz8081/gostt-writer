@@ -10,6 +10,7 @@
 static const char *TAG = "gostt-mute";
 
 static gostt_mute_config_t s_mute_cfg;
+static portMUX_TYPE s_mute_lock = portMUX_INITIALIZER_UNLOCKED;
 
 static void set_default_config(void)
 {
@@ -44,30 +45,35 @@ int gostt_mute_init(void)
 
 int gostt_mute_toggle(void)
 {
-    switch (s_mute_cfg.type) {
+    gostt_mute_config_t cfg;
+    portENTER_CRITICAL(&s_mute_lock);
+    cfg = s_mute_cfg;
+    portEXIT_CRITICAL(&s_mute_lock);
+
+    switch (cfg.type) {
         case GOSTT_MUTE_CONSUMER_CONTROL:
-            ESP_LOGI(TAG, "Mute: consumer control 0x%04X", s_mute_cfg.usage_id);
-            return gostt_usb_hid_consumer_control(s_mute_cfg.usage_id);
+            ESP_LOGI(TAG, "Mute: consumer control 0x%04X", cfg.usage_id);
+            return gostt_usb_hid_consumer_control(cfg.usage_id);
 
         case GOSTT_MUTE_KEYBOARD_SHORTCUT:
             ESP_LOGI(TAG, "Mute: shortcut mod=0x%02X key=0x%02X",
-                     s_mute_cfg.shortcut.modifier, s_mute_cfg.shortcut.keycode);
-            return gostt_usb_hid_send_shortcut(s_mute_cfg.shortcut.modifier,
-                                                s_mute_cfg.shortcut.keycode);
+                     cfg.shortcut.modifier, cfg.shortcut.keycode);
+            return gostt_usb_hid_send_shortcut(cfg.shortcut.modifier,
+                                                cfg.shortcut.keycode);
 
         case GOSTT_MUTE_MACRO:
             ESP_LOGW(TAG, "Macro mute not yet implemented");
             return -1;
 
         default:
-            ESP_LOGE(TAG, "Unknown mute type: %d", s_mute_cfg.type);
+            ESP_LOGE(TAG, "Unknown mute type: %d", cfg.type);
             return -1;
     }
 }
 
 int gostt_mute_configure(const uint8_t *data, size_t len)
 {
-    if (len < 1) return -1;
+    if (!data || len < 1) return -1;
 
     gostt_mute_config_t new_cfg = {0};
     new_cfg.type = (gostt_mute_type_t)data[0];
@@ -97,12 +103,22 @@ int gostt_mute_configure(const uint8_t *data, size_t len)
     nvs_handle_t handle;
     esp_err_t err = nvs_open(GOSTT_NVS_NAMESPACE, NVS_READWRITE, &handle);
     if (err == ESP_OK) {
-        nvs_set_blob(handle, GOSTT_NVS_KEY_MUTE_CFG, &new_cfg, sizeof(new_cfg));
-        nvs_commit(handle);
+        err = nvs_set_blob(handle, GOSTT_NVS_KEY_MUTE_CFG, &new_cfg, sizeof(new_cfg));
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "NVS write failed: %s", esp_err_to_name(err));
+        }
+        err = nvs_commit(handle);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "NVS commit failed: %s", esp_err_to_name(err));
+        }
         nvs_close(handle);
+    } else {
+        ESP_LOGE(TAG, "NVS open failed: %s", esp_err_to_name(err));
     }
 
+    portENTER_CRITICAL(&s_mute_lock);
     s_mute_cfg = new_cfg;
+    portEXIT_CRITICAL(&s_mute_lock);
     ESP_LOGI(TAG, "Mute config updated (type=%d)", new_cfg.type);
     return 0;
 }
