@@ -33,7 +33,8 @@ func TestClientSendWritesToTX(t *testing.T) {
 	client := mustNewClient(t, adapter, "AA:BB:CC:DD:EE:FF", makeTestKey(), zeroDelayOpts())
 
 	// Simulate an already-connected state
-	if err := client.setConnected(adapter.connection); err != nil {
+	conn := adapter.latestConnection()
+	if err := client.setConnected(conn); err != nil {
 		t.Fatalf("setConnected() error = %v", err)
 	}
 
@@ -42,7 +43,7 @@ func TestClientSendWritesToTX(t *testing.T) {
 		t.Fatalf("Send() error = %v", err)
 	}
 
-	writes := adapter.connection.txChar.writes
+	writes := conn.txChar.writes
 	if len(writes) == 0 {
 		t.Fatal("Send() produced no writes to TX characteristic")
 	}
@@ -55,7 +56,8 @@ func TestClientSendWritesToTX(t *testing.T) {
 func TestClientSendChunksLongText(t *testing.T) {
 	adapter := newMockAdapter(nil)
 	client := mustNewClient(t, adapter, "AA:BB:CC:DD:EE:FF", makeTestKey(), zeroDelayOpts())
-	if err := client.setConnected(adapter.connection); err != nil {
+	conn := adapter.latestConnection()
+	if err := client.setConnected(conn); err != nil {
 		t.Fatalf("setConnected() error = %v", err)
 	}
 
@@ -66,7 +68,7 @@ func TestClientSendChunksLongText(t *testing.T) {
 		t.Fatalf("Send() error = %v", err)
 	}
 
-	writes := adapter.connection.txChar.writes
+	writes := conn.txChar.writes
 	if len(writes) < 2 {
 		t.Errorf("expected multiple writes for 500-byte text, got %d", len(writes))
 	}
@@ -75,7 +77,8 @@ func TestClientSendChunksLongText(t *testing.T) {
 func TestClientSendEmptyString(t *testing.T) {
 	adapter := newMockAdapter(nil)
 	client := mustNewClient(t, adapter, "AA:BB:CC:DD:EE:FF", makeTestKey(), zeroDelayOpts())
-	if err := client.setConnected(adapter.connection); err != nil {
+	conn := adapter.latestConnection()
+	if err := client.setConnected(conn); err != nil {
 		t.Fatalf("setConnected() error = %v", err)
 	}
 
@@ -85,22 +88,23 @@ func TestClientSendEmptyString(t *testing.T) {
 	}
 
 	// Empty string should produce no writes
-	if len(adapter.connection.txChar.writes) != 0 {
-		t.Errorf("Send(\"\") produced %d writes, want 0", len(adapter.connection.txChar.writes))
+	if len(conn.txChar.writes) != 0 {
+		t.Errorf("Send(\"\") produced %d writes, want 0", len(conn.txChar.writes))
 	}
 }
 
 func TestClientSendIncrementingPacketNum(t *testing.T) {
 	adapter := newMockAdapter(nil)
 	client := mustNewClient(t, adapter, "AA:BB:CC:DD:EE:FF", makeTestKey(), zeroDelayOpts())
-	if err := client.setConnected(adapter.connection); err != nil {
+	conn := adapter.latestConnection()
+	if err := client.setConnected(conn); err != nil {
 		t.Fatalf("setConnected() error = %v", err)
 	}
 
 	_ = client.Send("first")
 	_ = client.Send("second")
 
-	writes := adapter.connection.txChar.writes
+	writes := conn.txChar.writes
 	if len(writes) != 2 {
 		t.Fatalf("expected 2 writes, got %d", len(writes))
 	}
@@ -200,7 +204,8 @@ func TestClientFlushQueueOnReconnect(t *testing.T) {
 	_ = client.Send("msg2")
 
 	// Simulate reconnect
-	if err := client.setConnected(adapter.connection); err != nil {
+	conn := adapter.latestConnection()
+	if err := client.setConnected(conn); err != nil {
 		t.Fatalf("setConnected() error = %v", err)
 	}
 	client.flushQueue()
@@ -209,7 +214,7 @@ func TestClientFlushQueueOnReconnect(t *testing.T) {
 		t.Errorf("QueueLen() after flush = %d, want 0", client.QueueLen())
 	}
 
-	writes := adapter.connection.txChar.writes
+	writes := conn.txChar.writes
 	if len(writes) != 2 {
 		t.Errorf("expected 2 writes after flush, got %d", len(writes))
 	}

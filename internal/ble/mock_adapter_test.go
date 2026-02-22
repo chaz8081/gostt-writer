@@ -92,8 +92,9 @@ func (c *mockConnection) SimulateDisconnect() {
 
 // mockAdapter simulates the BLE adapter.
 type mockAdapter struct {
+	mu         sync.Mutex
 	devices    []Device
-	connection *mockConnection
+	connection *mockConnection // most recent connection for test assertions
 }
 
 func newMockAdapter(devices []Device) *mockAdapter {
@@ -110,7 +111,18 @@ func (a *mockAdapter) Scan(_ context.Context, _ string) ([]Device, error) {
 }
 
 func (a *mockAdapter) Connect(_ context.Context, _ string) (Connection, error) {
-	return a.connection, nil
+	conn := newMockConnection()
+	a.mu.Lock()
+	a.connection = conn
+	a.mu.Unlock()
+	return conn, nil
+}
+
+// latestConnection returns the most recently created connection (thread-safe).
+func (a *mockAdapter) latestConnection() *mockConnection {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.connection
 }
 
 func TestMockAdapterImplementsInterface(t *testing.T) {

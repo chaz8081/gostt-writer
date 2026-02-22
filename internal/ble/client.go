@@ -39,8 +39,10 @@ type Client struct {
 	txChar    Characteristic
 	connected bool
 
-	packetNum atomic.Uint32
+	packetNum    atomic.Uint32
+	reconnecting atomic.Bool // guards against stacked reconnect goroutines
 
+	done  chan struct{} // closed by Close() to stop reconnectLoop
 	queue []string
 	opts  ClientOptions
 }
@@ -64,6 +66,7 @@ func NewClient(adapter Adapter, deviceMAC string, key []byte, opts ClientOptions
 		adapter:   adapter,
 		deviceMAC: deviceMAC,
 		key:       key,
+		done:      make(chan struct{}),
 		opts:      opts,
 	}, nil
 }
@@ -187,8 +190,17 @@ func (c *Client) flushQueue() {
 	}
 }
 
-// Close gracefully disconnects the BLE client.
+// Close gracefully disconnects the BLE client and stops any reconnect loop.
 func (c *Client) Close() error {
+	// Signal reconnect loop to stop. safe to call multiple times since
+	// we use sync.Once semantics via select-default.
+	select {
+	case <-c.done:
+		// already closed
+	default:
+		close(c.done)
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -205,12 +217,26 @@ func (c *Client) Close() error {
 
 // backoffDelay returns the reconnection delay for attempt n, capped at maxSeconds.
 func backoffDelay(attempt int, maxSeconds int) time.Duration {
+	if attempt > 30 {
+		attempt = 30 // prevent overflow from large shift
+	}
 	delay := time.Duration(1<<uint(attempt)) * time.Second
 	max := time.Duration(maxSeconds) * time.Second
 	if delay > max {
 		return max
 	}
 	return delay
+}
+
+// registerDisconnectHandler sets up the auto-reconnect callback on a connection.
+func (c *Client) registerDisconnectHandler(conn Connection) {
+	conn.OnDisconnect(func() {
+		slog.Warn("[BLE] disconnected, reconnecting...")
+		c.setDisconnected()
+		if c.reconnecting.CompareAndSwap(false, true) {
+			go c.reconnectLoop()
+		}
+	})
 }
 
 // Connect establishes the initial BLE connection to the paired device.
@@ -229,12 +255,7 @@ func (c *Client) Connect() error {
 		return fmt.Errorf("ble: set connected: %w", err)
 	}
 
-	// Register disconnect handler for auto-reconnect
-	conn.OnDisconnect(func() {
-		slog.Warn("[BLE] disconnected, reconnecting...")
-		c.setDisconnected()
-		go c.reconnectLoop()
-	})
+	c.registerDisconnectHandler(conn)
 
 	slog.Info("[BLE] connected", "mac", c.deviceMAC)
 	return nil
@@ -242,12 +263,25 @@ func (c *Client) Connect() error {
 
 // reconnectLoop attempts to reconnect with exponential backoff.
 func (c *Client) reconnectLoop() {
+	defer c.reconnecting.Store(false)
+
 	for attempt := 0; ; attempt++ {
+		// Check if client was closed.
+		select {
+		case <-c.done:
+			return
+		default:
+		}
+
 		// On the first attempt, try immediately; subsequent attempts use backoff.
 		if attempt > 0 {
 			delay := backoffDelay(attempt-1, c.opts.ReconnectMax)
 			slog.Info("[BLE] reconnect backoff", "attempt", attempt+1, "delay", delay)
-			time.Sleep(delay)
+			select {
+			case <-c.done:
+				return
+			case <-time.After(delay):
+			}
 		}
 
 		ctx := context.Background()
@@ -264,12 +298,7 @@ func (c *Client) reconnectLoop() {
 
 		slog.Info("[BLE] reconnected", "mac", c.deviceMAC)
 
-		// Register disconnect handler again
-		conn.OnDisconnect(func() {
-			slog.Warn("[BLE] disconnected, reconnecting...")
-			c.setDisconnected()
-			go c.reconnectLoop()
-		})
+		c.registerDisconnectHandler(conn)
 
 		// Flush queued messages
 		c.flushQueue()
