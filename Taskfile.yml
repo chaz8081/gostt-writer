@@ -10,6 +10,9 @@ vars:
   BINARY: "{{.BIN_DIR}}/gostt-writer"
   INSTALL_DIR: /usr/local/bin
 
+  # ESP-IDF (override with IDF_PATH env var)
+  IDF_PATH: '{{.IDF_PATH | default (print .HOME "/github/espressif/esp-idf")}}'
+
   # Version from git
   VERSION:
     sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
@@ -261,26 +264,63 @@ tasks:
     cmds:
       - make test_proto
 
+  fw-setup:
+    desc: Install ESP-IDF and USB serial driver (macOS)
+    cmds:
+      - |
+        echo "=== ESP-IDF Setup ==="
+        if [ ! -d "{{.IDF_PATH}}" ]; then
+          echo "ESP-IDF not found at {{.IDF_PATH}}"
+          echo "Install: https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/get-started/"
+          echo "Or: mkdir -p $(dirname {{.IDF_PATH}}) && git clone --recursive https://github.com/espressif/esp-idf.git {{.IDF_PATH}} && {{.IDF_PATH}}/install.sh esp32s3"
+          exit 1
+        fi
+        echo "ESP-IDF found at {{.IDF_PATH}}"
+
+        echo ""
+        echo "=== USB Serial Driver ==="
+        if ls /dev/cu.wchusbserial* /dev/cu.usbserial* /dev/cu.usbmodem* /dev/cu.SLAB* >/dev/null 2>&1; then
+          echo "USB serial port detected: $(ls /dev/cu.wchusbserial* /dev/cu.usbserial* /dev/cu.usbmodem* /dev/cu.SLAB* 2>/dev/null | head -1)"
+        elif command -v brew >/dev/null 2>&1; then
+          echo "No USB serial port found."
+          echo "Most ESP32-S3 dev boards use a CH34x UART chip. Installing driver..."
+          brew install --cask wch-ch34x-usb-serial-driver
+          echo ""
+          echo "IMPORTANT: Open /Applications/CH34xVCPDriver.app to activate the driver."
+          echo "Then go to System Settings > General > Login Items & Extensions > Driver Extensions"
+          echo "and enable the CH34x driver. Reboot, then plug in the board."
+        else
+          echo "No USB serial port found. Install the CH34x driver:"
+          echo "  brew install --cask wch-ch34x-usb-serial-driver"
+        fi
+
   fw-fullclean:
     desc: Full clean ESP32-S3 firmware build (removes build dir + managed components)
     dir: firmware/esp32
     cmds:
-      - idf.py fullclean
+      - |
+        export IDF_PATH="{{.IDF_PATH}}"
+        source "$IDF_PATH/export.sh" > /dev/null 2>&1
+        idf.py fullclean
 
   fw-build:
     desc: Build ESP32-S3 firmware
     dir: firmware/esp32
     cmds:
-      - idf.py build
+      - |
+        export IDF_PATH="{{.IDF_PATH}}"
+        source "$IDF_PATH/export.sh" > /dev/null 2>&1
+        idf.py build
 
   fw-port:
     desc: Detect ESP32-S3 serial port
     silent: true
     cmds:
       - |
-        PORT=$(ls /dev/cu.usbmodem* 2>/dev/null | head -1)
+        PORT="${FW_PORT:-$(ls /dev/cu.wchusbserial* /dev/cu.usbserial* /dev/cu.usbmodem* /dev/cu.SLAB* 2>/dev/null | head -1)}"
         if [ -z "$PORT" ]; then
           echo "No ESP32-S3 found. Is the device plugged in?" >&2
+          echo "Run 'task fw-setup' to install required drivers." >&2
           exit 1
         fi
         echo "$PORT"
@@ -290,9 +330,12 @@ tasks:
     dir: firmware/esp32
     cmds:
       - |
-        PORT="${FW_PORT:-$(ls /dev/cu.usbmodem* 2>/dev/null | head -1)}"
+        export IDF_PATH="{{.IDF_PATH}}"
+        source "$IDF_PATH/export.sh" > /dev/null 2>&1
+        PORT="${FW_PORT:-$(ls /dev/cu.wchusbserial* /dev/cu.usbserial* /dev/cu.usbmodem* /dev/cu.SLAB* 2>/dev/null | head -1)}"
         if [ -z "$PORT" ]; then
           echo "No ESP32-S3 found. Is the device plugged in?" >&2
+          echo "Run 'task fw-setup' to install required drivers." >&2
           exit 1
         fi
         echo "Flashing to $PORT..."
@@ -304,9 +347,12 @@ tasks:
     interactive: true
     cmds:
       - |
-        PORT="${FW_PORT:-$(ls /dev/cu.usbmodem* 2>/dev/null | head -1)}"
+        export IDF_PATH="{{.IDF_PATH}}"
+        source "$IDF_PATH/export.sh" > /dev/null 2>&1
+        PORT="${FW_PORT:-$(ls /dev/cu.wchusbserial* /dev/cu.usbserial* /dev/cu.usbmodem* /dev/cu.SLAB* 2>/dev/null | head -1)}"
         if [ -z "$PORT" ]; then
           echo "No ESP32-S3 found. Is the device plugged in?" >&2
+          echo "Run 'task fw-setup' to install required drivers." >&2
           exit 1
         fi
         idf.py -p "$PORT" monitor
@@ -317,9 +363,12 @@ tasks:
     interactive: true
     cmds:
       - |
-        PORT="${FW_PORT:-$(ls /dev/cu.usbmodem* 2>/dev/null | head -1)}"
+        export IDF_PATH="{{.IDF_PATH}}"
+        source "$IDF_PATH/export.sh" > /dev/null 2>&1
+        PORT="${FW_PORT:-$(ls /dev/cu.wchusbserial* /dev/cu.usbserial* /dev/cu.usbmodem* /dev/cu.SLAB* 2>/dev/null | head -1)}"
         if [ -z "$PORT" ]; then
           echo "No ESP32-S3 found. Is the device plugged in?" >&2
+          echo "Run 'task fw-setup' to install required drivers." >&2
           exit 1
         fi
         echo "Flashing to $PORT..."

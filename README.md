@@ -248,34 +248,20 @@ To use Parakeet:
 
 The `firmware/esp32/` directory contains custom GOSTT-KBD firmware for the ESP32-S3. It acts as a USB HID keyboard on the target device and receives encrypted text from gostt-writer over BLE.
 
-### Hardware
+See **[firmware/esp32/README.md](firmware/esp32/README.md)** for setup, prerequisites, and detailed instructions.
 
-Any ESP32-S3 development board with USB-OTG support (e.g., ESP32-S3-DevKitC-1). The firmware uses:
-
-- **GPIO 48** — WS2812 addressable LED (standard on most ESP32-S3 dev boards)
-- **GPIO 0** — BOOT button (used for factory reset)
-
-### Software Requirements
-
-- [ESP-IDF v5.x](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/get-started/)
-
-### Build & Flash
+### Quick Start
 
 ```bash
+task fw-setup          # Check prerequisites (ESP-IDF, USB driver)
 task fw-build          # Build firmware
-task fw-flash          # Flash to connected device
-task fw-monitor        # Serial monitor
-task fw-flash-monitor  # Flash and monitor in one step
-task fw-test           # Run host-side protobuf tests
+task fw-flash-monitor  # Flash and open serial monitor
+task ble-pair          # Pair with gostt-writer
 ```
 
-### Pairing
+### Hardware
 
-1. Flash the firmware to the ESP32-S3
-2. Plug the ESP32-S3 into the target device via USB (it enumerates as a USB HID keyboard)
-3. On your Mac, run `task ble-pair` (or `gostt-writer --ble-pair`)
-4. Pairing uses ECDH P-256 key exchange over BLE — the shared secret is saved to your config
-5. Set `inject.method: ble` in `~/.config/gostt-writer/config.yaml`
+Any ESP32-S3 development board with USB-OTG support (e.g., ESP32-S3-DevKitC-1). The board has two USB-C ports: **UART** (for flashing) and **USB** (HID keyboard output to target).
 
 ### LED Status
 
@@ -287,21 +273,6 @@ task fw-test           # Run host-side protobuf tests
 | Brief flash           | White    | Typing in progress                   |
 | Triple flash          | Red      | Error                                |
 | Alternating           | Red/Blue | Factory reset in progress            |
-
-### Factory Reset
-
-Hold the **BOOT** button for 5 seconds at startup. This erases all stored keys and mute configuration. The device restarts in an unpaired state.
-
-### Mute Button
-
-By default, the ESP32 sends USB Consumer Control Mute (`0x00E2`) when a mute command is received via BLE. This can be reconfigured through BLE commands to use keyboard shortcuts instead.
-
-### Troubleshooting
-
-- **LED stays off** — Check USB connection and ensure the firmware was flashed successfully (`task fw-flash-monitor` to see boot output).
-- **BLE pairing fails** — Make sure the ESP32-S3 is advertising (slow blue blink). Only one BLE connection is supported at a time.
-- **Typed text is garbled** — Verify the target device recognizes the ESP32 as a USB HID keyboard. Try a different USB port or cable.
-- **Mute key not working** — Some applications ignore Consumer Control keys. Reconfigure to use a keyboard shortcut via BLE commands.
 
 For architecture details, see the design documentation.
 
