@@ -132,6 +132,13 @@ static int tx_char_write_cb(uint16_t conn_handle, uint16_t attr_handle,
 
 // Response characteristic: supports notifications only (no read/write from client)
 // The attribute handle is captured during registration for sending notifications.
+// NimBLE requires a non-NULL access_cb even for notify-only characteristics.
+static int resp_char_access_cb(uint16_t conn_handle, uint16_t attr_handle,
+                                struct ble_gatt_access_ctxt *ctxt, void *arg)
+{
+    (void)conn_handle; (void)attr_handle; (void)ctxt; (void)arg;
+    return 0; // No-op: notifications are sent via ble_gatts_notify_custom
+}
 
 // MAC characteristic read handler
 static int mac_char_read_cb(uint16_t conn_handle, uint16_t attr_handle,
@@ -179,7 +186,7 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
             {
                 // Response characteristic (notify)
                 .uuid = &resp_char_uuid.u,
-                .access_cb = NULL,
+                .access_cb = resp_char_access_cb,
                 .val_handle = &s_resp_attr_handle,
                 .flags = BLE_GATT_CHR_F_NOTIFY,
             },
