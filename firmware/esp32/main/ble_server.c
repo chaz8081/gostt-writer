@@ -15,6 +15,7 @@
 #include "freertos/task.h"
 #include "freertos/timers.h"
 #include <string.h>
+#include <stdlib.h>
 
 static const char *TAG = "gostt-ble";
 
@@ -24,6 +25,44 @@ static uint16_t s_resp_attr_handle;
 static volatile bool s_connected = false;
 static TimerHandle_t s_keepalive_timer = NULL;
 static portMUX_TYPE s_conn_lock = portMUX_INITIALIZER_UNLOCKED;
+
+// Pairing task context: used to pass data from GATT callback to dedicated task
+typedef struct {
+    uint8_t peer_pubkey[GOSTT_COMPRESSED_PUBKEY_LEN];
+} pairing_task_ctx_t;
+
+static void pairing_task(void *arg)
+{
+    pairing_task_ctx_t *ctx = (pairing_task_ctx_t *)arg;
+
+    uint8_t own_pubkey[GOSTT_COMPRESSED_PUBKEY_LEN];
+    if (gostt_crypto_pair(s_config.crypto, ctx->peer_pubkey, own_pubkey) != 0) {
+        ESP_LOGE(TAG, "Pairing failed");
+        gostt_led_flash_error();
+        free(ctx);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    // Send our public key back as ResponsePacket(PeerStatus, Known, own_pubkey)
+    uint8_t resp_buf[128];
+    int resp_len = gostt_encode_response_packet(resp_buf, sizeof(resp_buf),
+                                                 GOSTT_RESP_PEER_STATUS,
+                                                 GOSTT_PEER_KNOWN,
+                                                 own_pubkey,
+                                                 GOSTT_COMPRESSED_PUBKEY_LEN);
+    if (resp_len > 0 && s_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+        struct os_mbuf *om_resp = ble_hs_mbuf_from_flat(resp_buf, resp_len);
+        if (om_resp) {
+            ble_gatts_notify_custom(s_conn_handle, s_resp_attr_handle, om_resp);
+        }
+    }
+
+    gostt_led_set(GOSTT_LED_PAIRED);
+    ESP_LOGI(TAG, "Pairing complete");
+    free(ctx);
+    vTaskDelete(NULL);
+}
 
 // Forward declarations
 static int ble_gap_event(struct ble_gap_event *event, void *arg);
@@ -53,29 +92,20 @@ static int tx_char_write_cb(uint16_t conn_handle, uint16_t attr_handle,
         (buf[0] == 0x02 || buf[0] == 0x03)) {
         ESP_LOGI(TAG, "Pairing request received (33-byte pubkey)");
 
-        uint8_t own_pubkey[GOSTT_COMPRESSED_PUBKEY_LEN];
-        if (gostt_crypto_pair(s_config.crypto, buf, own_pubkey) != 0) {
-            ESP_LOGE(TAG, "Pairing failed");
+        // Offload crypto to a dedicated task (ECDH needs ~8KB stack,
+        // far more than the NimBLE host task provides).
+        pairing_task_ctx_t *ctx = malloc(sizeof(pairing_task_ctx_t));
+        if (!ctx) {
+            ESP_LOGE(TAG, "Pairing: out of memory");
             gostt_led_flash_error();
             return 0;
         }
-
-        // Send our public key back as ResponsePacket(PeerStatus, Known, own_pubkey)
-        uint8_t resp_buf[128];
-        int resp_len = gostt_encode_response_packet(resp_buf, sizeof(resp_buf),
-                                                     GOSTT_RESP_PEER_STATUS,
-                                                     GOSTT_PEER_KNOWN,
-                                                     own_pubkey,
-                                                     GOSTT_COMPRESSED_PUBKEY_LEN);
-        if (resp_len > 0 && s_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
-            struct os_mbuf *om_resp = ble_hs_mbuf_from_flat(resp_buf, resp_len);
-            if (om_resp) {
-                ble_gatts_notify_custom(s_conn_handle, s_resp_attr_handle, om_resp);
-            }
+        memcpy(ctx->peer_pubkey, buf, GOSTT_COMPRESSED_PUBKEY_LEN);
+        if (xTaskCreate(pairing_task, "pair_crypto", 8192, ctx, 5, NULL) != pdPASS) {
+            ESP_LOGE(TAG, "Pairing: failed to create task");
+            free(ctx);
+            gostt_led_flash_error();
         }
-
-        gostt_led_set(GOSTT_LED_PAIRED);
-        ESP_LOGI(TAG, "Pairing complete");
         return 0;
     }
 

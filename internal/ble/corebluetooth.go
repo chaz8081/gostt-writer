@@ -17,6 +17,7 @@ type CoreBluetoothAdapter struct {
 	// mu protects the connections map.
 	mu          sync.Mutex
 	connections map[string]*coreBluetoothConnection // keyed by device UUID
+	enabled     bool
 }
 
 // NewCoreBluetoothAdapter creates a new BLE adapter using CoreBluetooth.
@@ -28,9 +29,20 @@ func NewCoreBluetoothAdapter() *CoreBluetoothAdapter {
 }
 
 func (a *CoreBluetoothAdapter) Enable() error {
+	a.mu.Lock()
+	if a.enabled {
+		a.mu.Unlock()
+		return nil
+	}
+	a.mu.Unlock()
+
 	if err := a.adapter.Enable(); err != nil {
 		return err
 	}
+
+	a.mu.Lock()
+	a.enabled = true
+	a.mu.Unlock()
 
 	// Register the adapter-level connect/disconnect handler.
 	// On macOS, tinygo/bluetooth fires this callback (with connected=false)
