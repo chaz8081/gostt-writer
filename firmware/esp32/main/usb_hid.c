@@ -180,6 +180,11 @@ int gostt_usb_hid_init(void)
 {
     const tinyusb_config_t tusb_cfg = {
         .port = TINYUSB_PORT_FULL_SPEED_0,
+        .task = {
+            .size = 4096,
+            .priority = 5,
+            .xCoreID = tskNO_AFFINITY,
+        },
         .descriptor = {
             .device = &desc_device,
             .string = string_desc_arr,
