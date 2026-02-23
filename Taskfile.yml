@@ -261,6 +261,12 @@ tasks:
     cmds:
       - make test_proto
 
+  fw-fullclean:
+    desc: Full clean ESP32-S3 firmware build (removes build dir + managed components)
+    dir: firmware/esp32
+    cmds:
+      - idf.py fullclean
+
   fw-build:
     desc: Build ESP32-S3 firmware
     dir: firmware/esp32
