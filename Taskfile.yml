@@ -1,6 +1,12 @@
 # https://taskfile.dev
 version: "3"
 
+# NOTE: Taskfile v3.46 uses gosh (built-in shell), NOT bash.
+# fw-* tasks use firmware/esp32/idf.sh wrapper to run idf.py under real bash,
+# since gosh doesn't propagate PATH changes from sourced scripts.
+set: [errexit, pipefail]
+shopt: [globstar]
+
 vars:
   # Paths
   WHISPER_DIR: third_party/whisper.cpp
@@ -298,78 +304,36 @@ tasks:
     desc: Full clean ESP32-S3 firmware build (removes build dir + managed components)
     dir: firmware/esp32
     cmds:
-      - |
-        export IDF_PATH="{{.IDF_PATH}}"
-        source "$IDF_PATH/export.sh" > /dev/null 2>&1
-        idf.py fullclean
+      - bash idf.sh fullclean
 
   fw-build:
     desc: Build ESP32-S3 firmware
     dir: firmware/esp32
     cmds:
-      - |
-        export IDF_PATH="{{.IDF_PATH}}"
-        source "$IDF_PATH/export.sh" > /dev/null 2>&1
-        idf.py build
+      - bash idf.sh build
 
   fw-port:
     desc: Detect ESP32-S3 serial port
     silent: true
     cmds:
-      - |
-        PORT="${FW_PORT:-$(ls /dev/cu.wchusbserial* /dev/cu.usbserial* /dev/cu.usbmodem* /dev/cu.SLAB* 2>/dev/null | head -1)}"
-        if [ -z "$PORT" ]; then
-          echo "No ESP32-S3 found. Is the device plugged in?" >&2
-          echo "Run 'task fw-setup' to install required drivers." >&2
-          exit 1
-        fi
-        echo "$PORT"
+      - bash -c 'PORT="${FW_PORT:-$(ls /dev/cu.wchusbserial* /dev/cu.usbserial* /dev/cu.usbmodem* /dev/cu.SLAB* 2>/dev/null | head -1)}"; if [ -z "$PORT" ]; then echo "No ESP32-S3 found. Is the device plugged in?" >&2; echo "Run task fw-setup to install required drivers." >&2; exit 1; fi; echo "$PORT"'
 
   fw-flash:
     desc: Flash firmware to connected ESP32-S3
     dir: firmware/esp32
     cmds:
-      - |
-        export IDF_PATH="{{.IDF_PATH}}"
-        source "$IDF_PATH/export.sh" > /dev/null 2>&1
-        PORT="${FW_PORT:-$(ls /dev/cu.wchusbserial* /dev/cu.usbserial* /dev/cu.usbmodem* /dev/cu.SLAB* 2>/dev/null | head -1)}"
-        if [ -z "$PORT" ]; then
-          echo "No ESP32-S3 found. Is the device plugged in?" >&2
-          echo "Run 'task fw-setup' to install required drivers." >&2
-          exit 1
-        fi
-        echo "Flashing to $PORT..."
-        idf.py -p "$PORT" flash
+      - bash -c 'PORT="${FW_PORT:-$(ls /dev/cu.wchusbserial* /dev/cu.usbserial* /dev/cu.usbmodem* /dev/cu.SLAB* 2>/dev/null | head -1)}"; if [ -z "$PORT" ]; then echo "No ESP32-S3 found. Is the device plugged in?" >&2; echo "Run task fw-setup to install required drivers." >&2; exit 1; fi; echo "Flashing to $PORT..."; bash idf.sh -p "$PORT" flash'
 
   fw-monitor:
     desc: Serial monitor for ESP32-S3
     dir: firmware/esp32
     interactive: true
     cmds:
-      - |
-        export IDF_PATH="{{.IDF_PATH}}"
-        source "$IDF_PATH/export.sh" > /dev/null 2>&1
-        PORT="${FW_PORT:-$(ls /dev/cu.wchusbserial* /dev/cu.usbserial* /dev/cu.usbmodem* /dev/cu.SLAB* 2>/dev/null | head -1)}"
-        if [ -z "$PORT" ]; then
-          echo "No ESP32-S3 found. Is the device plugged in?" >&2
-          echo "Run 'task fw-setup' to install required drivers." >&2
-          exit 1
-        fi
-        idf.py -p "$PORT" monitor
+      - bash -c 'PORT="${FW_PORT:-$(ls /dev/cu.wchusbserial* /dev/cu.usbserial* /dev/cu.usbmodem* /dev/cu.SLAB* 2>/dev/null | head -1)}"; if [ -z "$PORT" ]; then echo "No ESP32-S3 found. Is the device plugged in?" >&2; echo "Run task fw-setup to install required drivers." >&2; exit 1; fi; bash idf.sh -p "$PORT" monitor'
 
   fw-flash-monitor:
     desc: Flash firmware and open serial monitor
     dir: firmware/esp32
     interactive: true
     cmds:
-      - |
-        export IDF_PATH="{{.IDF_PATH}}"
-        source "$IDF_PATH/export.sh" > /dev/null 2>&1
-        PORT="${FW_PORT:-$(ls /dev/cu.wchusbserial* /dev/cu.usbserial* /dev/cu.usbmodem* /dev/cu.SLAB* 2>/dev/null | head -1)}"
-        if [ -z "$PORT" ]; then
-          echo "No ESP32-S3 found. Is the device plugged in?" >&2
-          echo "Run 'task fw-setup' to install required drivers." >&2
-          exit 1
-        fi
-        echo "Flashing to $PORT..."
-        idf.py -p "$PORT" flash monitor
+      - bash -c 'PORT="${FW_PORT:-$(ls /dev/cu.wchusbserial* /dev/cu.usbserial* /dev/cu.usbmodem* /dev/cu.SLAB* 2>/dev/null | head -1)}"; if [ -z "$PORT" ]; then echo "No ESP32-S3 found. Is the device plugged in?" >&2; echo "Run task fw-setup to install required drivers." >&2; exit 1; fi; echo "Flashing to $PORT..."; bash idf.sh -p "$PORT" flash monitor'
