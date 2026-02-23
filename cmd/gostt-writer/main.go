@@ -17,6 +17,7 @@ import (
 	"github.com/chaz8081/gostt-writer/internal/config"
 	"github.com/chaz8081/gostt-writer/internal/hotkey"
 	"github.com/chaz8081/gostt-writer/internal/inject"
+	"github.com/chaz8081/gostt-writer/internal/models"
 	"github.com/chaz8081/gostt-writer/internal/transcribe"
 )
 
@@ -33,6 +34,7 @@ func main() {
 	configPath := flag.String("config", "", "path to config file (default: ~/.config/gostt-writer/config.yaml)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	blePair := flag.Bool("ble-pair", false, "scan and pair with an ESP32-S3 BLE device")
+	downloadModels := flag.Bool("download-models", false, "download transcription models from HuggingFace")
 	flag.Parse()
 
 	if *showVersion {
@@ -42,6 +44,11 @@ func main() {
 
 	if *blePair {
 		runBLEPairing()
+		return
+	}
+
+	if *downloadModels {
+		runModelDownload()
 		return
 	}
 
@@ -349,4 +356,12 @@ func runBLEPairing() {
 	fmt.Println("    ble:")
 	fmt.Printf("      device_mac: %q\n", result.DeviceMAC)
 	fmt.Printf("      shared_secret: %q\n", secretHex)
+}
+
+// runModelDownload downloads transcription models from HuggingFace.
+func runModelDownload() {
+	if err := models.RunInteractiveDownload(); err != nil {
+		fmt.Fprintf(os.Stderr, "Model download failed: %v\n", err)
+		os.Exit(1)
+	}
 }

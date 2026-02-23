@@ -19,8 +19,8 @@ bin/
 *.out
 coverage.html
 
-# Whisper models (large binary files)
-models/
+# Whisper models (large binary files, top-level only)
+/models/
 
 # whisper.cpp build artifacts
 third_party/whisper.cpp/build/
