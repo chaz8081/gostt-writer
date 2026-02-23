@@ -65,6 +65,12 @@ tasks:
         mkdir -p {{.INSTALL_DIR}}
         cp {{.BINARY}} {{.INSTALL_DIR}}/gostt-writer
         echo "Installed gostt-writer to {{.INSTALL_DIR}}/gostt-writer"
+        echo ""
+        echo "To use BLE output with an ESP32-S3, see: firmware/esp32/README.md"
+        echo "  task fw-setup   # Install ESP-IDF toolchain"
+        echo "  task fw-build   # Build firmware"
+        echo "  task fw-flash   # Flash to device"
+        echo "  task ble-pair   # Pair over Bluetooth"
     interactive: true
 
   models:
@@ -264,6 +270,59 @@ tasks:
       - ./{{.BINARY}} --ble-pair
     interactive: true
 
+  ble-setup:
+    desc: Full BLE setup — ESP-IDF toolchain, build firmware, flash, and pair
+    cmds:
+      - |
+        echo "=== BLE Setup ==="
+        echo "This will set up ESP-IDF, build and flash the GOSTT-KBD firmware,"
+        echo "and pair your Mac with the ESP32-S3 over Bluetooth."
+        echo ""
+        echo "Prerequisites:"
+        echo "  - ESP32-S3 dev board plugged into UART port"
+        echo "  - Python 3.8+"
+        echo ""
+        echo "This may take 15-30 minutes on first run (ESP-IDF is ~1.8 GB)."
+        echo ""
+        printf "Continue? [y/N] "
+        read -r confirm
+        if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+          echo "Aborted."
+          exit 0
+        fi
+      - task fw-setup
+      - task fw-build
+      - |
+        echo ""
+        echo "=== Flash Firmware ==="
+        echo "Make sure the ESP32-S3 is connected via the UART port."
+        printf "Ready to flash? [y/N] "
+        read -r confirm
+        if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+          echo "Skipping flash. Run 'task fw-flash' when ready."
+          exit 0
+        fi
+      - task fw-flash
+      - |
+        echo ""
+        echo "=== BLE Pairing ==="
+        echo "Plug the ESP32-S3 USB port into the target device (phone, tablet, etc)."
+        echo "The LED should blink blue (advertising)."
+        printf "Ready to pair? [y/N] "
+        read -r confirm
+        if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+          echo "Skipping pairing. Run 'task ble-pair' when ready."
+          exit 0
+        fi
+      - task ble-pair
+      - |
+        echo ""
+        echo "=== Setup Complete ==="
+        echo "Your config has been updated with the paired device."
+        echo "Set inject.method to 'ble' in ~/.config/gostt-writer/config.yaml"
+        echo "Then run 'gostt-writer' and speak — text will appear on the target device."
+    interactive: true
+
   fw-test:
     desc: Run firmware host-side unit tests
     dir: firmware/esp32/test
@@ -276,8 +335,8 @@ tasks:
       - |
         echo "=== ESP-IDF Setup ==="
         if [ ! -d "{{.IDF_PATH}}" ]; then
-          echo "ESP-IDF submodule not initialized. Running: git submodule update --init third_party/esp-idf"
-          git submodule update --init third_party/esp-idf
+          echo "ESP-IDF submodule not initialized. Running: git submodule update --init --recursive third_party/esp-idf"
+          git submodule update --init --recursive third_party/esp-idf
         fi
         if [ ! -d "{{.IDF_PATH}}" ]; then
           echo "ESP-IDF still not found at {{.IDF_PATH}}" >&2

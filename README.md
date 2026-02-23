@@ -86,7 +86,12 @@ Press `Ctrl+C` to quit.
 
 To use gostt-writer with an ESP32-S3 as a wireless USB keyboard:
 
-1. **Set up the firmware** (one-time):
+**Automated setup** (recommended):
+```bash
+task ble-setup              # Guided: install toolchain, build, flash, pair
+```
+
+**Or step by step** (one-time):
    ```bash
    git submodule update --init third_party/esp-idf
    third_party/esp-idf/install.sh esp32s3
@@ -286,6 +291,12 @@ See **[firmware/esp32/README.md](firmware/esp32/README.md)** for setup, prerequi
 ### Quick Start
 
 ```bash
+task ble-setup             # Guided: full setup from scratch
+```
+
+Or run individual steps:
+
+```bash
 task fw-setup          # Check prerequisites (ESP-IDF, USB driver)
 task fw-build          # Build firmware
 task fw-flash-monitor  # Flash and open serial monitor
@@ -327,6 +338,7 @@ Run `task --list` to see all available tasks:
 | `task run`          | Build and run gostt-writer                               |
 | `task test`         | Run all tests                                            |
 | `task ble-pair`     | Pair with an ESP32-S3 running GOSTT-KBD firmware         |
+| `task ble-setup`    | Full guided BLE setup (toolchain, build, flash, pair)    |
 | `task fw-build`     | Build ESP32-S3 firmware                                  |
 | `task fw-flash`     | Flash firmware to connected ESP32-S3                     |
 | `task fw-monitor`   | Open serial monitor for ESP32-S3                         |
