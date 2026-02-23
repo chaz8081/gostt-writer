@@ -4,7 +4,8 @@
 #include <stdbool.h>
 #include "esp_log.h"
 #include "tinyusb.h"
-#include "tinyusb_default_config.h"
+#include "tusb.h"
+#include "device/usbd.h"
 #include "class/hid/hid_device.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -15,47 +16,51 @@ static const char *TAG = "gostt-usb";
 #define REPORT_ID_KEYBOARD  1
 #define REPORT_ID_CONSUMER  2
 
-// HID Report Descriptor: Keyboard + Consumer Control composite
+// ── HID Report Descriptor: Keyboard + Consumer Control composite ──
 static const uint8_t hid_report_descriptor[] = {
-    // Keyboard
-    0x05, 0x01,        // Usage Page (Generic Desktop)
-    0x09, 0x06,        // Usage (Keyboard)
-    0xA1, 0x01,        // Collection (Application)
-    0x85, REPORT_ID_KEYBOARD, // Report ID
-    0x05, 0x07,        //   Usage Page (Keyboard/Keypad)
-    0x19, 0xE0,        //   Usage Minimum (Left Control)
-    0x29, 0xE7,        //   Usage Maximum (Right GUI)
-    0x15, 0x00,        //   Logical Minimum (0)
-    0x25, 0x01,        //   Logical Maximum (1)
-    0x75, 0x01,        //   Report Size (1)
-    0x95, 0x08,        //   Report Count (8)
-    0x81, 0x02,        //   Input (Data, Variable, Absolute) — modifier byte
-    0x95, 0x01,        //   Report Count (1)
-    0x75, 0x08,        //   Report Size (8)
-    0x81, 0x01,        //   Input (Constant) — reserved byte
-    0x95, 0x06,        //   Report Count (6)
-    0x75, 0x08,        //   Report Size (8)
-    0x15, 0x00,        //   Logical Minimum (0)
-    0x25, 0x65,        //   Logical Maximum (101)
-    0x05, 0x07,        //   Usage Page (Keyboard/Keypad)
-    0x19, 0x00,        //   Usage Minimum (0)
-    0x29, 0x65,        //   Usage Maximum (101)
-    0x81, 0x00,        //   Input (Data, Array) — keycodes
-    0xC0,              // End Collection
+    TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(REPORT_ID_KEYBOARD)),
+    TUD_HID_REPORT_DESC_CONSUMER(HID_REPORT_ID(REPORT_ID_CONSUMER)),
+};
 
-    // Consumer Control
-    0x05, 0x0C,        // Usage Page (Consumer)
-    0x09, 0x01,        // Usage (Consumer Control)
-    0xA1, 0x01,        // Collection (Application)
-    0x85, REPORT_ID_CONSUMER, // Report ID
-    0x15, 0x00,        //   Logical Minimum (0)
-    0x26, 0xFF, 0x03,  //   Logical Maximum (1023)
-    0x19, 0x00,        //   Usage Minimum (0)
-    0x2A, 0xFF, 0x03,  //   Usage Maximum (1023)
-    0x75, 0x10,        //   Report Size (16)
-    0x95, 0x01,        //   Report Count (1)
-    0x81, 0x00,        //   Input (Data, Array)
-    0xC0,              // End Collection
+// ── USB Descriptors (required by esp_tinyusb v2.x for HID class) ──
+
+// Device descriptor
+static const tusb_desc_device_t desc_device = {
+    .bLength            = sizeof(tusb_desc_device_t),
+    .bDescriptorType    = TUSB_DESC_DEVICE,
+    .bcdUSB             = 0x0200,
+    .bDeviceClass       = 0x00,   // Defined at interface level
+    .bDeviceSubClass    = 0x00,
+    .bDeviceProtocol    = 0x00,
+    .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
+    .idVendor           = 0x303A, // Espressif VID
+    .idProduct          = 0x8105, // Custom PID for GOSTT-KBD
+    .bcdDevice          = 0x0100,
+    .iManufacturer      = 1,
+    .iProduct           = 2,
+    .iSerialNumber      = 3,
+    .bNumConfigurations = 1,
+};
+
+// Configuration descriptor
+enum { ITF_NUM_HID, ITF_NUM_TOTAL };
+#define EPNUM_HID         0x81
+#define CONFIG_TOTAL_LEN  (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN)
+
+static const uint8_t desc_configuration[] = {
+    TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN,
+                          TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
+    TUD_HID_DESCRIPTOR(ITF_NUM_HID, 0, HID_ITF_PROTOCOL_NONE,
+                       sizeof(hid_report_descriptor), EPNUM_HID,
+                       CFG_TUD_HID_EP_BUFSIZE, 5),
+};
+
+// String descriptors
+static const char *string_desc_arr[] = {
+    (const char[]){0x09, 0x04}, // 0: Language ID (English)
+    "GOSTT",                    // 1: Manufacturer
+    "GOSTT-KBD",                // 2: Product
+    "",                         // 3: Serial (empty — chip ID used)
 };
 
 // Keyboard report: modifier + reserved + 6 keycodes
@@ -173,7 +178,15 @@ static const ascii_to_hid_t ascii_map[95] = {
 
 int gostt_usb_hid_init(void)
 {
-    const tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
+    const tinyusb_config_t tusb_cfg = {
+        .port = TINYUSB_PORT_FULL_SPEED_0,
+        .descriptor = {
+            .device = &desc_device,
+            .string = string_desc_arr,
+            .string_count = sizeof(string_desc_arr) / sizeof(string_desc_arr[0]),
+            .full_speed_config = desc_configuration,
+        },
+    };
 
     esp_err_t ret = tinyusb_driver_install(&tusb_cfg);
     if (ret != ESP_OK) {
