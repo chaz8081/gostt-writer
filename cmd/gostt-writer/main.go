@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -130,113 +131,132 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	// Start hotkey listener in background
-	go listener.Start()
-
 	slog.Info("Ready! Press " + strings.Join(cfg.Hotkey.Keys, "+") + " to dictate. Ctrl+C to quit.")
 
-	// Main event loop
-	events := listener.Events()
-	for {
-		select {
-		case ev, ok := <-events:
-			if !ok {
-				// Hotkey channel closed, listener stopped
-				slog.Info("Hotkey listener stopped")
+	// Run the event processing loop in a goroutine so that listener.Start()
+	// can be called on the main OS thread below.
+	//
+	// On macOS, gohook's CGEventTap callback calls dispatch_sync_f(main_queue,
+	// ...) on every keypress to look up Unicode characters. If the hook runs on
+	// a non-main OS thread (as it did when launched with "go listener.Start()"),
+	// this deadlocks because Go's main goroutine never pumps the GCD main queue.
+	// Running the hook on the main OS thread makes event_loop == CFRunLoopGetMain()
+	// inside hook_run(), which skips the dispatch_sync_f path entirely.
+	go func() {
+		events := listener.Events()
+		for {
+			select {
+			case ev, ok := <-events:
+				if !ok {
+					// Hotkey channel closed, listener stopped
+					slog.Info("Hotkey listener stopped")
+					if err := recorder.Close(); err != nil {
+						slog.Error("failed to close recorder", "error", err)
+					}
+					if err := transcriber.Close(); err != nil {
+						slog.Error("failed to close transcriber", "error", err)
+					}
+					return
+				}
+
+				switch ev.Type {
+				case hotkey.EventStart:
+					if err := recorder.Start(); err != nil {
+						slog.Error("Failed to start recording", "error", err)
+						continue
+					}
+					slog.Info("Recording...")
+
+				case hotkey.EventStop:
+					samples := recorder.Stop()
+					if samples == nil {
+						continue
+					}
+
+					duration := float64(len(samples)) / float64(cfg.Audio.SampleRate)
+
+					if duration < minRecordingDuration {
+						slog.Info("Recording too short, skipping",
+							"duration_s", fmt.Sprintf("%.1f", duration),
+							"min_s", minRecordingDuration)
+						continue
+					}
+
+					if duration > maxRecordingDuration {
+						slog.Warn("Recording exceeds max duration, truncating",
+							"duration_s", fmt.Sprintf("%.1f", duration),
+							"max_s", maxRecordingDuration)
+						maxSamples := int(maxRecordingDuration * float64(cfg.Audio.SampleRate))
+						samples = samples[:maxSamples]
+						duration = maxRecordingDuration
+					}
+
+					slog.Info("Captured audio, transcribing...",
+						"duration_s", fmt.Sprintf("%.1f", duration))
+
+					// Async transcription and injection
+					go func(samples []float32) {
+						start := time.Now()
+						text, err := transcriber.Process(samples)
+						if err != nil {
+							slog.Error("Transcription failed", "error", err)
+							return
+						}
+
+						elapsed := time.Since(start).Round(time.Millisecond)
+
+						if text == "" {
+							slog.Info("No speech detected", "elapsed", elapsed)
+							return
+						}
+
+						slog.Info("Transcribed", "elapsed", elapsed, "text", text)
+
+						if err := injector.Inject(text); err != nil {
+							slog.Error("Text injection failed", "error", err)
+							return
+						}
+
+						slog.Info("Text injected")
+					}(samples)
+				}
+
+			case sig := <-sigCh:
+				slog.Info("Shutting down...", "signal", sig)
+				// Stop recording if active
+				if recorder.IsRecording() {
+					recorder.Stop()
+				}
 				if err := recorder.Close(); err != nil {
 					slog.Error("failed to close recorder", "error", err)
 				}
 				if err := transcriber.Close(); err != nil {
 					slog.Error("failed to close transcriber", "error", err)
 				}
-				return
-			}
-
-			switch ev.Type {
-			case hotkey.EventStart:
-				if err := recorder.Start(); err != nil {
-					slog.Error("Failed to start recording", "error", err)
-					continue
-				}
-				slog.Info("Recording...")
-
-			case hotkey.EventStop:
-				samples := recorder.Stop()
-				if samples == nil {
-					continue
-				}
-
-				duration := float64(len(samples)) / float64(cfg.Audio.SampleRate)
-
-				if duration < minRecordingDuration {
-					slog.Info("Recording too short, skipping",
-						"duration_s", fmt.Sprintf("%.1f", duration),
-						"min_s", minRecordingDuration)
-					continue
-				}
-
-				if duration > maxRecordingDuration {
-					slog.Warn("Recording exceeds max duration, truncating",
-						"duration_s", fmt.Sprintf("%.1f", duration),
-						"max_s", maxRecordingDuration)
-					maxSamples := int(maxRecordingDuration * float64(cfg.Audio.SampleRate))
-					samples = samples[:maxSamples]
-					duration = maxRecordingDuration
-				}
-
-				slog.Info("Captured audio, transcribing...",
-					"duration_s", fmt.Sprintf("%.1f", duration))
-
-				// Async transcription and injection
-				go func(samples []float32) {
-					start := time.Now()
-					text, err := transcriber.Process(samples)
-					if err != nil {
-						slog.Error("Transcription failed", "error", err)
-						return
+				if closer, ok := injector.(interface{ Close() error }); ok {
+					if err := closer.Close(); err != nil {
+						slog.Error("failed to close injector", "error", err)
 					}
-
-					elapsed := time.Since(start).Round(time.Millisecond)
-
-					if text == "" {
-						slog.Info("No speech detected", "elapsed", elapsed)
-						return
-					}
-
-					slog.Info("Transcribed", "elapsed", elapsed, "text", text)
-
-					if err := injector.Inject(text); err != nil {
-						slog.Error("Text injection failed", "error", err)
-						return
-					}
-
-					slog.Info("Text injected")
-				}(samples)
-			}
-
-		case sig := <-sigCh:
-			slog.Info("Shutting down...", "signal", sig)
-			// Stop recording if active
-			if recorder.IsRecording() {
-				recorder.Stop()
-			}
-			if err := recorder.Close(); err != nil {
-				slog.Error("failed to close recorder", "error", err)
-			}
-			if err := transcriber.Close(); err != nil {
-				slog.Error("failed to close transcriber", "error", err)
-			}
-			if closer, ok := injector.(interface{ Close() error }); ok {
-				if err := closer.Close(); err != nil {
-					slog.Error("failed to close injector", "error", err)
 				}
+				slog.Info("Goodbye!")
+				// Stop the hotkey listener, which unblocks listener.Start() on
+				// the main goroutine and allows main() to return cleanly.
+				// We call listener.Stop() instead of os.Exit(0) because the
+				// CFRunLoop on the main OS thread needs to exit naturally to
+				// avoid the gohook C cleanup crash.
+				listener.Stop()
 			}
-			slog.Info("Goodbye!")
-			// Exit directly to avoid gohook's C cleanup crash.
-			// The OS reclaims the event hook on process exit.
-			os.Exit(0)
 		}
-	}
+	}()
+
+	// Lock this goroutine to the main OS thread and start the hotkey listener
+	// here. On macOS, gohook's hook_run() runs CFRunLoopRun() and registers a
+	// CGEventTap; both require the calling thread to be the main OS thread so
+	// that event_loop == CFRunLoopGetMain(). This ensures dispatch_sync_f calls
+	// inside the tap callback resolve immediately against the current run loop
+	// instead of deadlocking on the GCD main queue.
+	runtime.LockOSThread()
+	listener.Start() // blocks until listener.Stop() is called
 }
 
 // loadConfig loads the config from the specified path, or falls back to
