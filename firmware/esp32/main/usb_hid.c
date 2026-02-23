@@ -177,11 +177,29 @@ static const ascii_to_hid_t ascii_map[95] = {
     {0x35, true},  // 0x7E ~
 };
 
+// USB event callback (called by esp_tinyusb on mount/unmount/suspend/resume)
+static void usb_event_cb(tinyusb_event_t *event, void *arg)
+{
+    (void)arg;
+    switch (event->id) {
+    case TINYUSB_EVENT_ATTACHED:
+        ESP_LOGI(TAG, "USB device mounted (host enumerated)");
+        break;
+    case TINYUSB_EVENT_DETACHED:
+        ESP_LOGW(TAG, "USB device unmounted");
+        break;
+    default:
+        ESP_LOGI(TAG, "USB event: %d", event->id);
+        break;
+    }
+}
+
 int gostt_usb_hid_init(void)
 {
     const tinyusb_config_t tusb_cfg = {
         .port = TINYUSB_PORT_FULL_SPEED_0,
         .task = TINYUSB_TASK_DEFAULT(),
+        .event_cb = usb_event_cb,
         .descriptor = {
             .device = &desc_device,
             .string = string_desc_arr,
@@ -200,7 +218,7 @@ int gostt_usb_hid_init(void)
     return 0;
 }
 
-// TinyUSB callbacks
+// TinyUSB HID callbacks
 uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance)
 {
     (void)instance;
