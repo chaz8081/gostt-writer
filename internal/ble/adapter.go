@@ -1,11 +1,11 @@
 // Package ble provides the BLE client for communicating with an ESP32-S3
-// running ToothPaste firmware. It handles connection management, encryption,
+// running GOSTT-KBD firmware. It handles connection management, encryption,
 // and text transmission over Bluetooth Low Energy.
 package ble
 
 import "context"
 
-// ToothPaste BLE UUIDs
+// GOSTT-KBD BLE UUIDs
 const (
 	ServiceUUID      = "19b10000-e8f2-537e-4f6c-d104768a1214"
 	TXCharUUID       = "6856e119-2c7b-455a-bf42-cf7ddd2c5907"

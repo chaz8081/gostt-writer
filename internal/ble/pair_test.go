@@ -11,7 +11,7 @@ import (
 
 func TestScanForDevices(t *testing.T) {
 	devices := []Device{
-		{Name: "ToothPaste-S3", MAC: "AA:BB:CC:DD:EE:FF", RSSI: -45},
+		{Name: "GOSTT-KBD", MAC: "AA:BB:CC:DD:EE:FF", RSSI: -45},
 	}
 	adapter := newMockAdapter(devices)
 
@@ -22,8 +22,8 @@ func TestScanForDevices(t *testing.T) {
 	if len(result) != 1 {
 		t.Fatalf("got %d devices, want 1", len(result))
 	}
-	if result[0].Name != "ToothPaste-S3" {
-		t.Errorf("Name = %q, want %q", result[0].Name, "ToothPaste-S3")
+	if result[0].Name != "GOSTT-KBD" {
+		t.Errorf("Name = %q, want %q", result[0].Name, "GOSTT-KBD")
 	}
 	if result[0].MAC != "AA:BB:CC:DD:EE:FF" {
 		t.Errorf("MAC = %q, want %q", result[0].MAC, "AA:BB:CC:DD:EE:FF")

@@ -28,7 +28,7 @@ func DefaultClientOptions() ClientOptions {
 	}
 }
 
-// Client manages the BLE connection to an ESP32-S3 running ToothPaste firmware.
+// Client manages the BLE connection to an ESP32-S3 running GOSTT-KBD firmware.
 type Client struct {
 	adapter   Adapter
 	deviceMAC string

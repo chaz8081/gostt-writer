@@ -1,4 +1,4 @@
-// Package crypto provides cryptographic primitives for the ToothPaste BLE protocol:
+// Package crypto provides cryptographic primitives for the GOSTT-KBD BLE protocol:
 // ECDH P-256 key exchange, compressed public key serialization, HKDF-SHA256 key
 // derivation, and AES-256-GCM encryption with separate IV and tag fields.
 package crypto
@@ -30,7 +30,7 @@ func GenerateKeyPair() (*ecdh.PrivateKey, *ecdh.PublicKey, error) {
 
 // CompressPublicKey returns the 33-byte SEC1 compressed form of a P-256 public key.
 // The crypto/ecdh package's Bytes() returns the uncompressed form (65 bytes: 0x04 || x || y).
-// We compress it to 33 bytes (0x02/0x03 || x) to match ToothPaste's format.
+// We compress it to 33 bytes (0x02/0x03 || x) to match GOSTT-KBD's format.
 func CompressPublicKey(pub *ecdh.PublicKey) []byte {
 	raw := pub.Bytes() // 65 bytes: 0x04 || x(32) || y(32)
 	x := raw[1:33]
@@ -125,7 +125,7 @@ func DeriveSharedSecret(priv *ecdh.PrivateKey, peerPub *ecdh.PublicKey) ([]byte,
 }
 
 // DeriveEncryptionKey uses HKDF-SHA256 to derive a 32-byte AES key from the shared secret.
-// Matches ToothPaste: HKDF(secret, salt=nil, info="toothpaste", length=32).
+// Matches GOSTT-KBD: HKDF(secret, salt=nil, info="toothpaste", length=32).
 func DeriveEncryptionKey(sharedSecret []byte) ([]byte, error) {
 	hkdfReader := hkdf.New(sha256.New, sharedSecret, nil, []byte("toothpaste"))
 	key := make([]byte, 32)
@@ -136,7 +136,7 @@ func DeriveEncryptionKey(sharedSecret []byte) ([]byte, error) {
 }
 
 // Encrypt encrypts plaintext with AES-256-GCM, returning iv (12 bytes),
-// ciphertext, and tag (16 bytes) separately (as ToothPaste expects them in
+// ciphertext, and tag (16 bytes) separately (as GOSTT-KBD expects them in
 // separate protobuf fields).
 func Encrypt(key, plaintext []byte) (iv, ciphertext, tag []byte, err error) {
 	block, err := aes.NewCipher(key)

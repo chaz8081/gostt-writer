@@ -258,7 +258,7 @@ tasks:
       - echo "Cleaned build artifacts."
 
   ble-pair:
-    desc: Pair with an ESP32-S3 running ToothPaste firmware
+    desc: Pair with an ESP32-S3 running GOSTT-KBD firmware
     deps: [build]
     cmds:
       - ./{{.BINARY}} --ble-pair

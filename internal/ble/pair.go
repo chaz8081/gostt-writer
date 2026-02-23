@@ -27,7 +27,7 @@ func DefaultPairOptions() PairOptions {
 	}
 }
 
-// ScanForDevices scans for ESP32 devices advertising the ToothPaste service.
+// ScanForDevices scans for ESP32 devices advertising the GOSTT-KBD service.
 func ScanForDevices(adapter Adapter, timeout time.Duration) ([]Device, error) {
 	if err := adapter.Enable(); err != nil {
 		return nil, fmt.Errorf("ble: enable adapter: %w", err)

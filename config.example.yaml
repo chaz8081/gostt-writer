@@ -45,7 +45,7 @@ inject:
   method: type
 
   # BLE output settings (only used when method is "ble")
-  # Run "task ble-pair" to pair with an ESP32-S3 running ToothPaste firmware.
+  # Run "task ble-pair" to pair with an ESP32-S3 running GOSTT-KBD firmware.
   # device_mac and shared_secret are written automatically by the pairing command.
   # ble:
   #   device_mac: "AA:BB:CC:DD:EE:FF"

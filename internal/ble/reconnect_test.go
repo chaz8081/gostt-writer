@@ -26,7 +26,7 @@ func TestReconnectBackoff(t *testing.T) {
 
 func TestClientConnectAndReconnect(t *testing.T) {
 	adapter := newMockAdapter([]Device{
-		{Name: "ToothPaste-S3", MAC: "AA:BB:CC:DD:EE:FF", RSSI: -45},
+		{Name: "GOSTT-KBD", MAC: "AA:BB:CC:DD:EE:FF", RSSI: -45},
 	})
 	client := mustNewClient(t, adapter, "AA:BB:CC:DD:EE:FF", makeTestKey(), zeroDelayOpts())
 
@@ -61,7 +61,7 @@ func TestClientConnectAndReconnect(t *testing.T) {
 
 func TestCloseStopsReconnectLoop(t *testing.T) {
 	adapter := newMockAdapter([]Device{
-		{Name: "ToothPaste-S3", MAC: "AA:BB:CC:DD:EE:FF", RSSI: -45},
+		{Name: "GOSTT-KBD", MAC: "AA:BB:CC:DD:EE:FF", RSSI: -45},
 	})
 	client := mustNewClient(t, adapter, "AA:BB:CC:DD:EE:FF", makeTestKey(), zeroDelayOpts())
 
@@ -108,7 +108,7 @@ func TestBackoffDelayOverflowProtection(t *testing.T) {
 
 func TestConcurrentDisconnectsDoNotStackReconnects(t *testing.T) {
 	adapter := newMockAdapter([]Device{
-		{Name: "ToothPaste-S3", MAC: "AA:BB:CC:DD:EE:FF", RSSI: -45},
+		{Name: "GOSTT-KBD", MAC: "AA:BB:CC:DD:EE:FF", RSSI: -45},
 	})
 	client := mustNewClient(t, adapter, "AA:BB:CC:DD:EE:FF", makeTestKey(), zeroDelayOpts())
 

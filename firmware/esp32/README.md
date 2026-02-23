@@ -19,17 +19,21 @@ The firmware uses:
 
 ## Prerequisites
 
-### 1. ESP-IDF (v6.x)
+### 1. ESP-IDF (v6.1-dev)
 
 ESP-IDF is included as a git submodule at `third_party/esp-idf`.
 
+> **Note:** This project uses a development snapshot of ESP-IDF v6.1 (not a stable release). It is pinned to a tested commit via the git submodule. Do not switch to a different ESP-IDF version without testing.
+
 ```bash
 # Initialize the submodule (first time only)
-git submodule update --init third_party/esp-idf
+git submodule update --init --recursive third_party/esp-idf
 
 # Install toolchain for ESP32-S3
 third_party/esp-idf/install.sh esp32s3
 ```
+
+> **Heads up:** The ESP-IDF submodule is ~1.8 GB and the toolchain install adds another ~1.5 GB. Expect 10-25 minutes for initial setup depending on your connection.
 
 > You do **not** need to manually run `source export.sh` -- all `task fw-*` commands handle this automatically.
 >
@@ -55,7 +59,15 @@ After opening the app:
 
 You can also run `task fw-setup` which checks for both ESP-IDF and the serial driver.
 
-### 3. Task Runner
+### 3. Python 3.8+
+
+ESP-IDF requires Python 3.8 or later for its build system and toolchain scripts. macOS includes Python 3 by default since Catalina. Verify with:
+
+```bash
+python3 --version
+```
+
+### 4. Task Runner
 
 All commands use [Task](https://taskfile.dev):
 
@@ -96,6 +108,17 @@ FW_PORT=/dev/cu.wchusbserial10 task fw-flash
 IDF_PATH=/opt/esp-idf task fw-build
 ```
 
+## Development Setup (Two Cables)
+
+For active development, connect **both** USB-C cables simultaneously:
+
+| Cable | Port | Purpose |
+|-------|------|---------|
+| Cable 1 | **UART** | Flashing, serial monitor, debug logs |
+| Cable 2 | **USB** | HID keyboard output to target device |
+
+This lets you flash, monitor logs, and test USB HID output at the same time. The UART connection stays on your Mac while the USB connection goes to whatever device you want to type on (phone, tablet, another PC).
+
 ## Pairing
 
 1. Flash the firmware to the ESP32-S3 (via the **UART** port)
@@ -103,6 +126,7 @@ IDF_PATH=/opt/esp-idf task fw-build
 3. On your Mac, run `task ble-pair` (or `gostt-writer --ble-pair`)
 4. Pairing uses ECDH P-256 key exchange over BLE -- the shared secret is saved to your config
 5. Set `inject.method: ble` in `~/.config/gostt-writer/config.yaml`
+6. Verify pairing works — speak a test phrase. You should see the LED flash white briefly and text appear on the target device.
 
 ## LED Status
 
@@ -132,7 +156,7 @@ Hold the **BOOT** button for 5 seconds at startup. This erases all stored keys a
 
 The `task fw-*` commands source ESP-IDF automatically. If it still fails, verify the submodule is initialized:
 ```bash
-git submodule update --init third_party/esp-idf
+git submodule update --init --recursive third_party/esp-idf
 third_party/esp-idf/install.sh esp32s3
 ```
 

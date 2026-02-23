@@ -1,4 +1,4 @@
-// Package protocol implements protobuf encoding for the ToothPaste BLE protocol.
+// Package protocol implements protobuf encoding for the GOSTT-KBD BLE protocol.
 package protocol
 
 import (
@@ -47,7 +47,7 @@ func MarshalKeyboardPacket(message string) []byte {
 }
 
 // MarshalEncryptedData wraps a serialized KeyboardPacket in an EncryptedData envelope.
-// For ToothPaste, EncryptedData has a single field: KeyboardPacket (field 1, bytes).
+// For GOSTT-KBD, EncryptedData has a single field: KeyboardPacket (field 1, bytes).
 func MarshalEncryptedData(keyboardPacket []byte) []byte {
 	var buf []byte
 	buf = append(buf, 0x0a)
