@@ -16,8 +16,8 @@ vars:
   BINARY: "{{.BIN_DIR}}/gostt-writer"
   INSTALL_DIR: /usr/local/bin
 
-  # ESP-IDF (override with IDF_PATH env var)
-  IDF_PATH: '{{.IDF_PATH | default (print .HOME "/github/espressif/esp-idf")}}'
+  # ESP-IDF (defaults to repo submodule; override with IDF_PATH env var)
+  IDF_PATH: '{{.IDF_PATH | default (print .ROOT_DIR "/third_party/esp-idf")}}'
 
   # Version from git
   VERSION:
@@ -276,12 +276,26 @@ tasks:
       - |
         echo "=== ESP-IDF Setup ==="
         if [ ! -d "{{.IDF_PATH}}" ]; then
-          echo "ESP-IDF not found at {{.IDF_PATH}}"
-          echo "Install: https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/get-started/"
-          echo "Or: mkdir -p $(dirname {{.IDF_PATH}}) && git clone --recursive https://github.com/espressif/esp-idf.git {{.IDF_PATH}} && {{.IDF_PATH}}/install.sh esp32s3"
+          echo "ESP-IDF submodule not initialized. Running: git submodule update --init third_party/esp-idf"
+          git submodule update --init third_party/esp-idf
+        fi
+        if [ ! -d "{{.IDF_PATH}}" ]; then
+          echo "ESP-IDF still not found at {{.IDF_PATH}}" >&2
           exit 1
         fi
         echo "ESP-IDF found at {{.IDF_PATH}}"
+
+        # Check if toolchain is installed
+        if [ ! -f "{{.IDF_PATH}}/export.sh" ]; then
+          echo "ESP-IDF export.sh not found — submodule may be incomplete" >&2
+          exit 1
+        fi
+        if ! bash -c '. "{{.IDF_PATH}}/export.sh" > /dev/null 2>&1 && which idf.py > /dev/null 2>&1'; then
+          echo "ESP-IDF toolchain not installed. Running: {{.IDF_PATH}}/install.sh esp32s3"
+          "{{.IDF_PATH}}/install.sh" esp32s3
+        else
+          echo "ESP-IDF toolchain is installed"
+        fi
 
         echo ""
         echo "=== USB Serial Driver ==="

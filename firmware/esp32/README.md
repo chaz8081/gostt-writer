@@ -21,20 +21,19 @@ The firmware uses:
 
 ### 1. ESP-IDF (v6.x)
 
-ESP-IDF is the official development framework for ESP32 chips.
+ESP-IDF is included as a git submodule at `third_party/esp-idf`.
 
 ```bash
-# Clone ESP-IDF
-mkdir -p ~/github/espressif
-git clone --recursive https://github.com/espressif/esp-idf.git ~/github/espressif/esp-idf
+# Initialize the submodule (first time only)
+git submodule update --init third_party/esp-idf
 
 # Install toolchain for ESP32-S3
-~/github/espressif/esp-idf/install.sh esp32s3
+third_party/esp-idf/install.sh esp32s3
 ```
 
-The Taskfile expects ESP-IDF at `~/github/espressif/esp-idf` by default. Override with the `IDF_PATH` environment variable if installed elsewhere.
-
 > You do **not** need to manually run `source export.sh` -- all `task fw-*` commands handle this automatically.
+>
+> To use a different ESP-IDF installation, set the `IDF_PATH` environment variable.
 
 ### 2. USB Serial Driver (macOS)
 
@@ -93,7 +92,7 @@ task fw-flash-monitor  # Flash + monitor in one step
 # Use a specific serial port
 FW_PORT=/dev/cu.wchusbserial10 task fw-flash
 
-# Use ESP-IDF from a different location
+# Use ESP-IDF from a different location (instead of the submodule)
 IDF_PATH=/opt/esp-idf task fw-build
 ```
 
@@ -131,9 +130,10 @@ Hold the **BOOT** button for 5 seconds at startup. This erases all stored keys a
 
 ### Build fails with "idf.py not found"
 
-The `task fw-*` commands source ESP-IDF automatically. If it still fails, verify `IDF_PATH`:
+The `task fw-*` commands source ESP-IDF automatically. If it still fails, verify the submodule is initialized:
 ```bash
-ls ~/github/espressif/esp-idf/export.sh
+git submodule update --init third_party/esp-idf
+third_party/esp-idf/install.sh esp32s3
 ```
 
 ### Build fails with Python path mismatch

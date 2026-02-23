@@ -8,11 +8,15 @@
 
 set -euo pipefail
 
-IDF_PATH="${IDF_PATH:-${HOME}/github/espressif/esp-idf}"
+# Default to the repo-local submodule; allow override via IDF_PATH env var.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+IDF_PATH="${IDF_PATH:-${REPO_ROOT}/third_party/esp-idf}"
+export IDF_PATH
 
 if [ ! -d "$IDF_PATH" ]; then
   echo "ESP-IDF not found at $IDF_PATH" >&2
-  echo "Set IDF_PATH or install: https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/get-started/" >&2
+  echo "Run: git submodule update --init third_party/esp-idf && third_party/esp-idf/install.sh esp32s3" >&2
   exit 1
 fi
 
