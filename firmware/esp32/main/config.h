@@ -12,8 +12,8 @@
 #define GOSTT_KEEPALIVE_INTERVAL_MS 5000
 
 // USB HID typing cadence (ms)
-#define GOSTT_KEY_PRESS_MS          5
-#define GOSTT_KEY_GAP_MS            2
+#define GOSTT_KEY_PRESS_MS          10
+#define GOSTT_KEY_GAP_MS            5
 #define GOSTT_SHORTCUT_HOLD_MS      10
 #define GOSTT_CONSUMER_PRESS_MS     10
 #define GOSTT_HID_READY_TIMEOUT_MS  50

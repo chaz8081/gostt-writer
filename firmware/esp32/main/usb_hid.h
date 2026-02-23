@@ -11,8 +11,8 @@ int gostt_usb_hid_init(void);
 
 // Type a string as USB HID keystrokes.
 // Only ASCII printable characters (0x20-0x7E), \n, and \t are supported.
-// Blocks until all characters are typed.
-// Returns 0 on success, -1 on error.
+// Text is queued to a dedicated typer task and typed asynchronously.
+// Returns 0 on success (queued), -1 on error.
 int gostt_usb_hid_type_text(const char *text, size_t len);
 
 // Send a USB HID Consumer Control usage code (e.g., 0x00E2 for Mute).

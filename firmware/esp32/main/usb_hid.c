@@ -2,6 +2,8 @@
 #include "usb_hid.h"
 #include "config.h"
 #include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
 #include "esp_log.h"
 #include "tinyusb.h"
 #include "tinyusb_default_config.h"
@@ -10,8 +12,29 @@
 #include "class/hid/hid_device.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
 
 static const char *TAG = "gostt-usb";
+
+// ── Typer task: offloads HID report calls from BLE callback context ──
+// tud_hid_report() must be called from a context that allows TinyUSB to
+// process the USB endpoint. Calling it from the NimBLE host task (Core 0)
+// can cause reports to be queued but never flushed. Running the typer on
+// Core 1 alongside the TinyUSB task avoids this.
+
+#define TYPER_QUEUE_DEPTH   4
+#define TYPER_STACK_SIZE    4096
+
+typedef struct {
+    char   *text;   // heap-allocated, freed by typer task
+    size_t  len;
+} typer_msg_t;
+
+static QueueHandle_t s_typer_queue;
+static TaskHandle_t  s_typer_task;
+
+// Forward declarations
+static void typer_task(void *arg);
 
 // HID Report IDs
 #define REPORT_ID_KEYBOARD  1
@@ -214,6 +237,22 @@ int gostt_usb_hid_init(void)
         return -1;
     }
 
+    // Create typer queue and task (pinned to Core 1 with TinyUSB)
+    s_typer_queue = xQueueCreate(TYPER_QUEUE_DEPTH, sizeof(typer_msg_t));
+    if (!s_typer_queue) {
+        ESP_LOGE(TAG, "Failed to create typer queue");
+        return -1;
+    }
+
+    BaseType_t ok = xTaskCreatePinnedToCore(
+        typer_task, "gostt_typer", TYPER_STACK_SIZE,
+        NULL, 5, &s_typer_task, 1  // Core 1, priority 5
+    );
+    if (ok != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create typer task");
+        return -1;
+    }
+
     ESP_LOGI(TAG, "USB HID initialized");
     return 0;
 }
@@ -260,8 +299,14 @@ static void send_keyboard_report(uint8_t modifier, uint8_t keycode)
     keyboard_report_t report = {0};
     report.modifier = modifier;
     if (keycode) report.keycodes[0] = keycode;
-    if (!wait_hid_ready(GOSTT_HID_READY_TIMEOUT_MS)) return;
-    tud_hid_report(REPORT_ID_KEYBOARD, &report, sizeof(report));
+    if (!wait_hid_ready(GOSTT_HID_READY_TIMEOUT_MS)) {
+        ESP_LOGW(TAG, "HID not ready for key 0x%02x", keycode);
+        return;
+    }
+    bool ok = tud_hid_report(REPORT_ID_KEYBOARD, &report, sizeof(report));
+    if (!ok) {
+        ESP_LOGW(TAG, "tud_hid_report failed for key 0x%02x", keycode);
+    }
     vTaskDelay(pdMS_TO_TICKS(GOSTT_KEY_PRESS_MS));
 }
 
@@ -273,14 +318,15 @@ static void release_keyboard(void)
     vTaskDelay(pdMS_TO_TICKS(GOSTT_KEY_GAP_MS));
 }
 
-int gostt_usb_hid_type_text(const char *text, size_t len)
+// Internal: type text synchronously (must be called from typer task context).
+static void type_text_sync(const char *text, size_t len)
 {
-    if (!text || len == 0) return -1;
-
     if (!tud_mounted()) {
         ESP_LOGW(TAG, "USB not mounted — cannot type");
-        return -1;
+        return;
     }
+
+    ESP_LOGI(TAG, "Typing %zu chars", len);
 
     for (size_t i = 0; i < len; i++) {
         char c = text[i];
@@ -301,6 +347,40 @@ int gostt_usb_hid_type_text(const char *text, size_t len)
 
         send_keyboard_report(modifier, keycode);
         release_keyboard();
+    }
+}
+
+// Typer task: dequeues text messages and types them via USB HID.
+// Pinned to Core 1 alongside TinyUSB to ensure reports are flushed.
+static void typer_task(void *arg)
+{
+    (void)arg;
+    typer_msg_t msg;
+    for (;;) {
+        if (xQueueReceive(s_typer_queue, &msg, portMAX_DELAY) == pdTRUE) {
+            type_text_sync(msg.text, msg.len);
+            free(msg.text);
+        }
+    }
+}
+
+int gostt_usb_hid_type_text(const char *text, size_t len)
+{
+    if (!text || len == 0) return -1;
+
+    // Copy text to heap for the typer task
+    char *buf = malloc(len);
+    if (!buf) {
+        ESP_LOGE(TAG, "Failed to allocate %zu bytes for text", len);
+        return -1;
+    }
+    memcpy(buf, text, len);
+
+    typer_msg_t msg = { .text = buf, .len = len };
+    if (xQueueSend(s_typer_queue, &msg, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        ESP_LOGW(TAG, "Typer queue full — dropping %zu chars", len);
+        free(buf);
+        return -1;
     }
     return 0;
 }
