@@ -1,25 +1,35 @@
 // firmware/esp32/main/crypto.c
+//
+// PSA Crypto API implementation for ESP-IDF v6.1 (mbedtls 4.x).
+// Uses PSA for ECDH, HKDF-SHA256, AES-256-GCM.
+// Uses ESP-IDF-ported mbedtls/ecp.h for compressed EC pubkey conversion
+// (PSA only supports uncompressed format).
+
 #include "crypto.h"
 #include "config.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "nvs.h"
 
-#include "mbedtls/ecdh.h"
+// IMPORTANT: mbedtls/ecp.h MUST come before psa/crypto.h.
+// ESP-IDF's port wrapper defines MBEDTLS_DECLARE_PRIVATE_IDENTIFIERS before
+// including the private header. If psa/crypto.h is included first, it
+// transitively includes private/ecp.h WITHOUT that macro, setting the include
+// guard but skipping all function declarations.
 #include "mbedtls/ecp.h"
-#include "mbedtls/ctr_drbg.h"
-#include "mbedtls/entropy.h"
-#include "mbedtls/hkdf.h"
-#include "mbedtls/md.h"
-#include "mbedtls/gcm.h"
-#include "mbedtls/platform_util.h"
+#include "mbedtls/bignum.h"
+#include "psa/crypto.h"
 
 #include <string.h>
 #include <limits.h>
 
 static const char *TAG = "gostt-crypto";
 
-// Load AES key from NVS
+// Uncompressed EC P-256 pubkey: 04 || x(32) || y(32) = 65 bytes
+#define UNCOMPRESSED_PUBKEY_LEN 65
+
+// --- NVS helpers ---
+
 static int load_key_from_nvs(gostt_crypto_ctx_t *ctx)
 {
     nvs_handle_t handle;
@@ -30,7 +40,6 @@ static int load_key_from_nvs(gostt_crypto_ctx_t *ctx)
     err = nvs_get_blob(handle, GOSTT_NVS_KEY_AES, ctx->aes_key, &key_len);
     if (err == ESP_OK && key_len == GOSTT_AES_KEY_LEN) {
         ctx->has_key = true;
-        // Also load peer pubkey if available
         size_t pub_len = GOSTT_COMPRESSED_PUBKEY_LEN;
         nvs_get_blob(handle, GOSTT_NVS_KEY_PEER_PUB, ctx->peer_pubkey, &pub_len);
     }
@@ -39,7 +48,6 @@ static int load_key_from_nvs(gostt_crypto_ctx_t *ctx)
     return (ctx->has_key) ? 0 : -1;
 }
 
-// Save AES key and peer pubkey to NVS
 static int save_key_to_nvs(const gostt_crypto_ctx_t *ctx, const uint8_t *peer_pubkey)
 {
     nvs_handle_t handle;
@@ -68,9 +76,71 @@ static int save_key_to_nvs(const gostt_crypto_ctx_t *ctx, const uint8_t *peer_pu
     return 0;
 }
 
+// --- Compressed EC pubkey helpers (using ESP-IDF-ported mbedtls/ecp.h) ---
+
+// Decompress 33-byte compressed pubkey to 65-byte uncompressed (04 || x || y)
+static int decompress_pubkey(const uint8_t *compressed, uint8_t *uncompressed_out)
+{
+    int ret = -1;
+    mbedtls_ecp_group grp;
+    mbedtls_ecp_point pt;
+
+    mbedtls_ecp_group_init(&grp);
+    mbedtls_ecp_point_init(&pt);
+
+    if (mbedtls_ecp_group_load(&grp, MBEDTLS_ECP_DP_SECP256R1) != 0) goto cleanup;
+    if (mbedtls_ecp_point_read_binary(&grp, &pt, compressed, GOSTT_COMPRESSED_PUBKEY_LEN) != 0) goto cleanup;
+    if (mbedtls_ecp_check_pubkey(&grp, &pt) != 0) goto cleanup;
+
+    size_t olen;
+    if (mbedtls_ecp_point_write_binary(&grp, &pt, MBEDTLS_ECP_PF_UNCOMPRESSED,
+                                        &olen, uncompressed_out, UNCOMPRESSED_PUBKEY_LEN) != 0) goto cleanup;
+    if (olen != UNCOMPRESSED_PUBKEY_LEN) goto cleanup;
+
+    ret = 0;
+cleanup:
+    mbedtls_ecp_point_free(&pt);
+    mbedtls_ecp_group_free(&grp);
+    return ret;
+}
+
+// Compress 65-byte uncompressed pubkey to 33-byte compressed (02/03 || x)
+static int compress_pubkey(const uint8_t *uncompressed, uint8_t *compressed_out)
+{
+    int ret = -1;
+    mbedtls_ecp_group grp;
+    mbedtls_ecp_point pt;
+
+    mbedtls_ecp_group_init(&grp);
+    mbedtls_ecp_point_init(&pt);
+
+    if (mbedtls_ecp_group_load(&grp, MBEDTLS_ECP_DP_SECP256R1) != 0) goto cleanup;
+    if (mbedtls_ecp_point_read_binary(&grp, &pt, uncompressed, UNCOMPRESSED_PUBKEY_LEN) != 0) goto cleanup;
+
+    size_t olen;
+    if (mbedtls_ecp_point_write_binary(&grp, &pt, MBEDTLS_ECP_PF_COMPRESSED,
+                                        &olen, compressed_out, GOSTT_COMPRESSED_PUBKEY_LEN) != 0) goto cleanup;
+    if (olen != GOSTT_COMPRESSED_PUBKEY_LEN) goto cleanup;
+
+    ret = 0;
+cleanup:
+    mbedtls_ecp_point_free(&pt);
+    mbedtls_ecp_group_free(&grp);
+    return ret;
+}
+
+// --- Public API ---
+
 int gostt_crypto_init(gostt_crypto_ctx_t *ctx)
 {
     memset(ctx, 0, sizeof(*ctx));
+
+    psa_status_t status = psa_crypto_init();
+    if (status != PSA_SUCCESS) {
+        ESP_LOGE(TAG, "PSA crypto init failed: %d", (int)status);
+        return -1;
+    }
+
     if (load_key_from_nvs(ctx) == 0) {
         ESP_LOGI(TAG, "Loaded encryption key from NVS");
     } else {
@@ -83,100 +153,118 @@ int gostt_crypto_pair(gostt_crypto_ctx_t *ctx,
                       const uint8_t *peer_compressed_pubkey,
                       uint8_t *own_pubkey_out)
 {
-    int ret = -1;
-    mbedtls_ecdh_context ecdh;
-    mbedtls_entropy_context entropy;
-    mbedtls_ctr_drbg_context ctr_drbg;
+    psa_status_t status;
+    mbedtls_svc_key_id_t key_id = MBEDTLS_SVC_KEY_ID_INIT;
     uint8_t shared_secret[32];
+    int ret = -1;
 
-    mbedtls_ecdh_init(&ecdh);
-    mbedtls_entropy_init(&entropy);
-    mbedtls_ctr_drbg_init(&ctr_drbg);
+    // 1. Generate our ECC key pair (secp256r1)
+    psa_key_attributes_t key_attr = PSA_KEY_ATTRIBUTES_INIT;
+    psa_set_key_usage_flags(&key_attr, PSA_KEY_USAGE_DERIVE | PSA_KEY_USAGE_EXPORT);
+    psa_set_key_algorithm(&key_attr, PSA_ALG_ECDH);
+    psa_set_key_type(&key_attr, PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1));
+    psa_set_key_bits(&key_attr, 256);
 
-    // Seed RNG
-    if (mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
-                               (const unsigned char *)"gostt-kbd", 9) != 0) {
-        ESP_LOGE(TAG, "RNG seed failed");
+    status = psa_generate_key(&key_attr, &key_id);
+    if (status != PSA_SUCCESS) {
+        ESP_LOGE(TAG, "Key generation failed: %d", (int)status);
+        return -1;
+    }
+
+    // 2. Export our public key (uncompressed format: 04 || x || y)
+    uint8_t our_uncompressed[UNCOMPRESSED_PUBKEY_LEN];
+    size_t our_pub_len = 0;
+    status = psa_export_public_key(key_id, our_uncompressed, sizeof(our_uncompressed), &our_pub_len);
+    if (status != PSA_SUCCESS || our_pub_len != UNCOMPRESSED_PUBKEY_LEN) {
+        ESP_LOGE(TAG, "Export public key failed: %d", (int)status);
         goto cleanup;
     }
 
-    // Setup ECDH with secp256r1
-    if (mbedtls_ecdh_setup(&ecdh, MBEDTLS_ECP_DP_SECP256R1) != 0) {
-        ESP_LOGE(TAG, "ECDH setup failed");
+    // 3. Compress our public key to 33 bytes for the peer
+    if (compress_pubkey(our_uncompressed, own_pubkey_out) != 0) {
+        ESP_LOGE(TAG, "Compress own pubkey failed");
         goto cleanup;
     }
 
-    // Generate our keypair
-    if (mbedtls_ecdh_gen_public(&ecdh.MBEDTLS_PRIVATE(grp),
-                                 &ecdh.MBEDTLS_PRIVATE(d),
-                                 &ecdh.MBEDTLS_PRIVATE(Q),
-                                 mbedtls_ctr_drbg_random, &ctr_drbg) != 0) {
-        ESP_LOGE(TAG, "ECDH gen public failed");
+    // 4. Decompress peer's compressed public key to uncompressed format
+    uint8_t peer_uncompressed[UNCOMPRESSED_PUBKEY_LEN];
+    if (decompress_pubkey(peer_compressed_pubkey, peer_uncompressed) != 0) {
+        ESP_LOGE(TAG, "Decompress peer pubkey failed");
         goto cleanup;
     }
 
-    // Export our compressed public key (33 bytes)
-    {
-        mbedtls_ecp_point *Q = &ecdh.MBEDTLS_PRIVATE(Q);
-        size_t olen;
-        if (mbedtls_ecp_point_write_binary(&ecdh.MBEDTLS_PRIVATE(grp), Q,
-                                            MBEDTLS_ECP_PF_COMPRESSED,
-                                            &olen, own_pubkey_out,
-                                            GOSTT_COMPRESSED_PUBKEY_LEN) != 0 || olen != 33) {
-            ESP_LOGE(TAG, "Export compressed pubkey failed");
-            goto cleanup;
-        }
+    // 5. ECDH: compute shared secret
+    size_t shared_len = 0;
+    status = psa_raw_key_agreement(PSA_ALG_ECDH,
+                                    key_id,
+                                    peer_uncompressed, UNCOMPRESSED_PUBKEY_LEN,
+                                    shared_secret, sizeof(shared_secret),
+                                    &shared_len);
+    if (status != PSA_SUCCESS || shared_len != 32) {
+        ESP_LOGE(TAG, "ECDH key agreement failed: %d", (int)status);
+        goto cleanup;
     }
 
-    // Import peer's compressed public key
+    // 6. HKDF-SHA256: salt=NULL, info="toothpaste", output=32 bytes
     {
-        mbedtls_ecp_point peer_Q;
-        mbedtls_ecp_point_init(&peer_Q);
-        if (mbedtls_ecp_point_read_binary(&ecdh.MBEDTLS_PRIVATE(grp), &peer_Q,
-                                           peer_compressed_pubkey,
-                                           GOSTT_COMPRESSED_PUBKEY_LEN) != 0) {
-            ESP_LOGE(TAG, "Import peer pubkey failed");
-            mbedtls_ecp_point_free(&peer_Q);
-            goto cleanup;
-        }
-        if (mbedtls_ecp_check_pubkey(&ecdh.MBEDTLS_PRIVATE(grp), &peer_Q) != 0) {
-            ESP_LOGE(TAG, "Peer pubkey not on curve");
-            mbedtls_ecp_point_free(&peer_Q);
-            goto cleanup;
-        }
-        mbedtls_ecp_copy(&ecdh.MBEDTLS_PRIVATE(Qp), &peer_Q);
-        mbedtls_ecp_point_free(&peer_Q);
-    }
+        // Import shared secret as a PSA key (required for HKDF SECRET step)
+        psa_key_attributes_t ikm_attr = PSA_KEY_ATTRIBUTES_INIT;
+        psa_set_key_usage_flags(&ikm_attr, PSA_KEY_USAGE_DERIVE);
+        psa_set_key_algorithm(&ikm_attr, PSA_ALG_HKDF(PSA_ALG_SHA_256));
+        psa_set_key_type(&ikm_attr, PSA_KEY_TYPE_DERIVE);
+        psa_set_key_bits(&ikm_attr, shared_len * 8);
 
-    // Compute shared secret
-    {
-        mbedtls_mpi z;
-        mbedtls_mpi_init(&z);
-        if (mbedtls_ecdh_compute_shared(&ecdh.MBEDTLS_PRIVATE(grp), &z,
-                                         &ecdh.MBEDTLS_PRIVATE(Qp),
-                                         &ecdh.MBEDTLS_PRIVATE(d),
-                                         mbedtls_ctr_drbg_random, &ctr_drbg) != 0) {
-            ESP_LOGE(TAG, "ECDH compute shared failed");
-            mbedtls_mpi_free(&z);
+        mbedtls_svc_key_id_t ikm_key = MBEDTLS_SVC_KEY_ID_INIT;
+        status = psa_import_key(&ikm_attr, shared_secret, shared_len, &ikm_key);
+        if (status != PSA_SUCCESS) {
+            ESP_LOGE(TAG, "HKDF IKM import failed: %d", (int)status);
             goto cleanup;
         }
-        if (mbedtls_mpi_write_binary(&z, shared_secret, 32) != 0) {
-            ESP_LOGE(TAG, "MPI write binary failed");
-            mbedtls_mpi_free(&z);
-            goto cleanup;
-        }
-        mbedtls_mpi_free(&z);
-    }
 
-    // HKDF-SHA256: salt=NULL, info="toothpaste", output=32 bytes
-    {
-        const mbedtls_md_info_t *md_info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
-        if (mbedtls_hkdf(md_info,
-                          NULL, 0,                                    // salt
-                          shared_secret, 32,                          // ikm
-                          (const uint8_t *)GOSTT_HKDF_INFO, GOSTT_HKDF_INFO_LEN, // info
-                          ctx->aes_key, GOSTT_AES_KEY_LEN) != 0) {   // output
-            ESP_LOGE(TAG, "HKDF failed");
+        psa_key_derivation_operation_t kdf = PSA_KEY_DERIVATION_OPERATION_INIT;
+        status = psa_key_derivation_setup(&kdf, PSA_ALG_HKDF(PSA_ALG_SHA_256));
+        if (status != PSA_SUCCESS) {
+            ESP_LOGE(TAG, "HKDF setup failed: %d", (int)status);
+            psa_key_derivation_abort(&kdf);
+            psa_destroy_key(ikm_key);
+            goto cleanup;
+        }
+
+        // Salt (empty/NULL = zero-length salt, which HKDF treats as hash-length zeros)
+        status = psa_key_derivation_input_bytes(&kdf, PSA_KEY_DERIVATION_INPUT_SALT, NULL, 0);
+        if (status != PSA_SUCCESS) {
+            ESP_LOGE(TAG, "HKDF salt input failed: %d", (int)status);
+            psa_key_derivation_abort(&kdf);
+            psa_destroy_key(ikm_key);
+            goto cleanup;
+        }
+
+        // IKM (shared secret as key handle)
+        status = psa_key_derivation_input_key(&kdf, PSA_KEY_DERIVATION_INPUT_SECRET, ikm_key);
+        if (status != PSA_SUCCESS) {
+            ESP_LOGE(TAG, "HKDF IKM input failed: %d", (int)status);
+            psa_key_derivation_abort(&kdf);
+            psa_destroy_key(ikm_key);
+            goto cleanup;
+        }
+
+        // Info
+        status = psa_key_derivation_input_bytes(&kdf, PSA_KEY_DERIVATION_INPUT_INFO,
+                                                 (const uint8_t *)GOSTT_HKDF_INFO,
+                                                 GOSTT_HKDF_INFO_LEN);
+        if (status != PSA_SUCCESS) {
+            ESP_LOGE(TAG, "HKDF info input failed: %d", (int)status);
+            psa_key_derivation_abort(&kdf);
+            psa_destroy_key(ikm_key);
+            goto cleanup;
+        }
+
+        // Output
+        status = psa_key_derivation_output_bytes(&kdf, ctx->aes_key, GOSTT_AES_KEY_LEN);
+        psa_key_derivation_abort(&kdf);
+        psa_destroy_key(ikm_key);
+        if (status != PSA_SUCCESS) {
+            ESP_LOGE(TAG, "HKDF output failed: %d", (int)status);
             goto cleanup;
         }
     }
@@ -194,10 +282,10 @@ int gostt_crypto_pair(gostt_crypto_ctx_t *ctx,
     ret = 0;
 
 cleanup:
-    mbedtls_platform_zeroize(shared_secret, sizeof(shared_secret));
-    mbedtls_ecdh_free(&ecdh);
-    mbedtls_ctr_drbg_free(&ctr_drbg);
-    mbedtls_entropy_free(&entropy);
+    // Wipe shared secret
+    memset(shared_secret, 0, sizeof(shared_secret));
+    // Destroy the ephemeral key
+    psa_destroy_key(key_id);
     return ret;
 }
 
@@ -216,31 +304,48 @@ int gostt_crypto_decrypt(const gostt_crypto_ctx_t *ctx,
         return -1;
     }
 
-    mbedtls_gcm_context gcm;
-    mbedtls_gcm_init(&gcm);
+    // Import AES key into PSA
+    psa_key_attributes_t key_attr = PSA_KEY_ATTRIBUTES_INIT;
+    psa_set_key_usage_flags(&key_attr, PSA_KEY_USAGE_DECRYPT);
+    psa_set_key_algorithm(&key_attr, PSA_ALG_GCM);
+    psa_set_key_type(&key_attr, PSA_KEY_TYPE_AES);
+    psa_set_key_bits(&key_attr, GOSTT_AES_KEY_LEN * 8);
 
-    if (mbedtls_gcm_setkey(&gcm, MBEDTLS_CIPHER_ID_AES,
-                            ctx->aes_key, GOSTT_AES_KEY_LEN * 8) != 0) {
-        ESP_LOGE(TAG, "GCM setkey failed");
-        mbedtls_gcm_free(&gcm);
+    mbedtls_svc_key_id_t key_id = MBEDTLS_SVC_KEY_ID_INIT;
+    psa_status_t status = psa_import_key(&key_attr, ctx->aes_key, GOSTT_AES_KEY_LEN, &key_id);
+    if (status != PSA_SUCCESS) {
+        ESP_LOGE(TAG, "AES key import failed: %d", (int)status);
         return -1;
     }
 
-    int ret = mbedtls_gcm_auth_decrypt(&gcm,
-                                        ciphertext_len,
-                                        iv, GOSTT_IV_LEN,
-                                        NULL, 0,           // no AAD
-                                        tag, GOSTT_TAG_LEN,
-                                        ciphertext,
-                                        plaintext_out);
-    mbedtls_gcm_free(&gcm);
+    // PSA AEAD expects ciphertext || tag concatenated
+    // Build combined buffer: ciphertext + tag
+    size_t combined_len = ciphertext_len + GOSTT_TAG_LEN;
+    uint8_t *combined = (uint8_t *)malloc(combined_len);
+    if (!combined) {
+        ESP_LOGE(TAG, "Alloc failed for AEAD input");
+        psa_destroy_key(key_id);
+        return -1;
+    }
+    memcpy(combined, ciphertext, ciphertext_len);
+    memcpy(combined + ciphertext_len, tag, GOSTT_TAG_LEN);
 
-    if (ret != 0) {
-        ESP_LOGE(TAG, "AES-GCM decrypt failed: %d", ret);
+    size_t plaintext_len = 0;
+    status = psa_aead_decrypt(key_id, PSA_ALG_GCM,
+                               iv, GOSTT_IV_LEN,
+                               NULL, 0,  // no AAD
+                               combined, combined_len,
+                               plaintext_out, ciphertext_len,
+                               &plaintext_len);
+    free(combined);
+    psa_destroy_key(key_id);
+
+    if (status != PSA_SUCCESS) {
+        ESP_LOGE(TAG, "AES-GCM decrypt failed: %d", (int)status);
         return -1;
     }
 
-    return (int)ciphertext_len; // plaintext same length as ciphertext for GCM
+    return (int)plaintext_len;
 }
 
 int gostt_crypto_erase(gostt_crypto_ctx_t *ctx)
@@ -255,7 +360,7 @@ int gostt_crypto_erase(gostt_crypto_ctx_t *ctx)
         nvs_close(handle);
     }
 
-    mbedtls_platform_zeroize(ctx, sizeof(*ctx));
+    memset(ctx, 0, sizeof(*ctx));
     ESP_LOGI(TAG, "All keys erased");
     return 0;
 }

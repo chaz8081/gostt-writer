@@ -23,6 +23,7 @@ static uint16_t s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static uint16_t s_resp_attr_handle;
 static volatile bool s_connected = false;
 static TimerHandle_t s_keepalive_timer = NULL;
+static portMUX_TYPE s_conn_lock = portMUX_INITIALIZER_UNLOCKED;
 
 // Forward declarations
 static int ble_gap_event(struct ble_gap_event *event, void *arg);
@@ -200,9 +201,9 @@ static void keepalive_timer_cb(TimerHandle_t timer)
 {
     (void)timer;
 
-    ble_hs_lock();
+    portENTER_CRITICAL(&s_conn_lock);
     uint16_t conn = s_conn_handle;
-    ble_hs_unlock();
+    portEXIT_CRITICAL(&s_conn_lock);
 
     if (conn == BLE_HS_CONN_HANDLE_NONE) return;
 
@@ -212,12 +213,10 @@ static void keepalive_timer_cb(TimerHandle_t timer)
                                             GOSTT_PEER_UNKNOWN,
                                             NULL, 0);
     if (len > 0) {
-        ble_hs_lock();
         struct os_mbuf *om = ble_hs_mbuf_from_flat(buf, len);
         if (om) {
             ble_gatts_notify_custom(conn, s_resp_attr_handle, om);
         }
-        ble_hs_unlock();
     }
 }
 
@@ -243,10 +242,10 @@ static void start_advertising(void)
 
     // Advertise service UUID in scan response
     struct ble_hs_adv_fields rsp_fields = {0};
-    rsp_fields.uuids128 = (ble_uuid128_t[]){{
+    static const ble_uuid128_t adv_svc_uuid =
         BLE_UUID128_INIT(0x14, 0x12, 0x8a, 0x76, 0x04, 0xd1, 0x6c, 0x4f,
-                         0x7e, 0x53, 0xf2, 0xe8, 0x00, 0x00, 0xb1, 0x19)
-    }};
+                         0x7e, 0x53, 0xf2, 0xe8, 0x00, 0x00, 0xb1, 0x19);
+    rsp_fields.uuids128 = &adv_svc_uuid;
     rsp_fields.num_uuids128 = 1;
     rsp_fields.uuids128_is_complete = 1;
     rc = ble_gap_adv_rsp_set_fields(&rsp_fields);
@@ -274,7 +273,9 @@ static int ble_gap_event(struct ble_gap_event *event, void *arg)
     switch (event->type) {
         case BLE_GAP_EVENT_CONNECT:
             if (event->connect.status == 0) {
+                portENTER_CRITICAL(&s_conn_lock);
                 s_conn_handle = event->connect.conn_handle;
+                portEXIT_CRITICAL(&s_conn_lock);
                 s_connected = true;
                 ESP_LOGI(TAG, "Client connected (handle=%d)", s_conn_handle);
 
@@ -295,7 +296,9 @@ static int ble_gap_event(struct ble_gap_event *event, void *arg)
 
         case BLE_GAP_EVENT_DISCONNECT:
             ESP_LOGI(TAG, "Client disconnected (reason=%d)", event->disconnect.reason);
+            portENTER_CRITICAL(&s_conn_lock);
             s_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+            portEXIT_CRITICAL(&s_conn_lock);
             s_connected = false;
 
             if (s_keepalive_timer) {

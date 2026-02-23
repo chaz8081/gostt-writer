@@ -5,6 +5,8 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "nvs.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
 #include <string.h>
 
 static const char *TAG = "gostt-mute";

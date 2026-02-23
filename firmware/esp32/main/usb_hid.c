@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include "esp_log.h"
 #include "tinyusb.h"
+#include "tinyusb_default_config.h"
 #include "class/hid/hid_device.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -172,11 +173,7 @@ static const ascii_to_hid_t ascii_map[95] = {
 
 int gostt_usb_hid_init(void)
 {
-    const tinyusb_config_t tusb_cfg = {
-        .device_descriptor = NULL,  // use default
-        .string_descriptor = NULL,  // use default
-        .external_phy = false,
-    };
+    const tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
 
     esp_err_t ret = tinyusb_driver_install(&tusb_cfg);
     if (ret != ESP_OK) {
