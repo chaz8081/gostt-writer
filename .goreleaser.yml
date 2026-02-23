@@ -41,3 +41,17 @@ release:
   draft: false
   prerelease: auto
   name_template: "{{ .Tag }}"
+  header: |
+    ## Getting Started
+
+    1. Download and extract the archive for your platform
+    2. Download transcription models:
+       ```
+       ./gostt-writer --download-models
+       ```
+    3. Run:
+       ```
+       ./gostt-writer
+       ```
+
+    See [README.md](https://github.com/chaz8081/gostt-writer#readme) for full documentation.

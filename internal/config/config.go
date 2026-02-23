@@ -13,7 +13,7 @@ import (
 
 // Config holds all application configuration.
 type Config struct {
-	ModelPath  string           `yaml:"model_path"` // deprecated: use Transcribe.ModelPath
+	ModelPath  string           `yaml:"model_path,omitempty"` // deprecated: use Transcribe.ModelPath
 	Transcribe TranscribeConfig `yaml:"transcribe"`
 	Hotkey     HotkeyConfig     `yaml:"hotkey"`
 	Audio      AudioConfig      `yaml:"audio"`
@@ -43,15 +43,15 @@ type AudioConfig struct {
 // InjectConfig holds text injection settings.
 type InjectConfig struct {
 	Method string    `yaml:"method"` // "type", "paste", or "ble"
-	BLE    BLEConfig `yaml:"ble"`
+	BLE    BLEConfig `yaml:"ble,omitempty"`
 }
 
 // BLEConfig holds BLE output settings (used when inject.method is "ble").
 type BLEConfig struct {
-	DeviceMAC    string `yaml:"device_mac"`    // paired ESP32 MAC address
-	SharedSecret string `yaml:"shared_secret"` // hex-encoded 32-byte AES key
-	QueueSize    int    `yaml:"queue_size"`    // max queued messages during disconnect (default 64)
-	ReconnectMax int    `yaml:"reconnect_max"` // max reconnect backoff in seconds (default 30)
+	DeviceMAC    string `yaml:"device_mac,omitempty"`    // paired ESP32 MAC address
+	SharedSecret string `yaml:"shared_secret,omitempty"` // hex-encoded 32-byte AES key
+	QueueSize    int    `yaml:"queue_size,omitempty"`    // max queued messages during disconnect (default 64)
+	ReconnectMax int    `yaml:"reconnect_max,omitempty"` // max reconnect backoff in seconds (default 30)
 }
 
 // DefaultConfigDir returns the default config directory path.
@@ -68,14 +68,29 @@ func DefaultConfigPath() string {
 	return filepath.Join(DefaultConfigDir(), "config.yaml")
 }
 
+// DefaultDataDir returns the default data directory path for application data.
+func DefaultDataDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".local", "share", "gostt-writer")
+}
+
+// DefaultModelsDir returns the default directory for model files.
+func DefaultModelsDir() string {
+	return filepath.Join(DefaultDataDir(), "models")
+}
+
 // Default returns a Config with sensible default values.
 func Default() *Config {
+	modelsDir := DefaultModelsDir()
 	return &Config{
-		ModelPath: "models/ggml-base.en.bin",
+		ModelPath: filepath.Join(modelsDir, "ggml-base.en.bin"),
 		Transcribe: TranscribeConfig{
 			Backend:          "whisper",
-			ModelPath:        "models/ggml-base.en.bin",
-			ParakeetModelDir: "models/parakeet-tdt-v2",
+			ModelPath:        filepath.Join(modelsDir, "ggml-base.en.bin"),
+			ParakeetModelDir: filepath.Join(modelsDir, "parakeet-tdt-v2"),
 		},
 		Hotkey: HotkeyConfig{
 			Keys: []string{"ctrl", "shift", "r"},
@@ -122,7 +137,23 @@ func Load(path string) (*Config, error) {
 	cfg.Transcribe.ModelPath = expandTilde(cfg.Transcribe.ModelPath)
 	cfg.Transcribe.ParakeetModelDir = expandTilde(cfg.Transcribe.ParakeetModelDir)
 
+	// Fallback: if configured model path doesn't exist, check relative path in working dir
+	cfg.Transcribe.ModelPath = resolveModelPath(cfg.Transcribe.ModelPath, "models/ggml-base.en.bin")
+	cfg.Transcribe.ParakeetModelDir = resolveModelPath(cfg.Transcribe.ParakeetModelDir, "models/parakeet-tdt-v2")
+
 	return cfg, nil
+}
+
+// resolveModelPath returns the configured path if it exists, or falls back to
+// a relative path in the working directory for development convenience.
+func resolveModelPath(configured, relativeFallback string) string {
+	if _, err := os.Stat(configured); err == nil {
+		return configured
+	}
+	if _, err := os.Stat(relativeFallback); err == nil {
+		return relativeFallback
+	}
+	return configured // return original (will fail later with clear error)
 }
 
 // Validate checks the config for invalid values.
@@ -214,6 +245,7 @@ func WriteDefault() (string, error) {
 	}
 
 	cfg := Default()
+	cfg.ModelPath = "" // omit deprecated field from generated config
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return "", fmt.Errorf("marshaling default config: %w", err)

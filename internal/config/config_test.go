@@ -257,15 +257,18 @@ func TestWriteDefault_NoOpIfExists(t *testing.T) {
 
 func TestDefaultTranscribeConfig(t *testing.T) {
 	cfg := Default()
+	modelsDir := DefaultModelsDir()
 
 	if cfg.Transcribe.Backend != "whisper" {
 		t.Errorf("Transcribe.Backend = %q, want %q", cfg.Transcribe.Backend, "whisper")
 	}
-	if cfg.Transcribe.ModelPath != "models/ggml-base.en.bin" {
-		t.Errorf("Transcribe.ModelPath = %q, want %q", cfg.Transcribe.ModelPath, "models/ggml-base.en.bin")
+	expectedModelPath := filepath.Join(modelsDir, "ggml-base.en.bin")
+	if cfg.Transcribe.ModelPath != expectedModelPath {
+		t.Errorf("Transcribe.ModelPath = %q, want %q", cfg.Transcribe.ModelPath, expectedModelPath)
 	}
-	if cfg.Transcribe.ParakeetModelDir != "models/parakeet-tdt-v2" {
-		t.Errorf("Transcribe.ParakeetModelDir = %q, want %q", cfg.Transcribe.ParakeetModelDir, "models/parakeet-tdt-v2")
+	expectedParakeetDir := filepath.Join(modelsDir, "parakeet-tdt-v2")
+	if cfg.Transcribe.ParakeetModelDir != expectedParakeetDir {
+		t.Errorf("Transcribe.ParakeetModelDir = %q, want %q", cfg.Transcribe.ParakeetModelDir, expectedParakeetDir)
 	}
 }
 
@@ -512,5 +515,56 @@ func TestParseLogLevel(t *testing.T) {
 				t.Errorf("ParseLogLevel(%q) = %v, want %v", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestDefaultDataDir(t *testing.T) {
+	dir := DefaultDataDir()
+	if dir == "" {
+		t.Fatal("DefaultDataDir() returned empty string")
+	}
+	if !strings.HasSuffix(dir, filepath.Join(".local", "share", "gostt-writer")) {
+		t.Errorf("DefaultDataDir() = %q, want suffix %q", dir, filepath.Join(".local", "share", "gostt-writer"))
+	}
+}
+
+func TestDefaultModelsDir(t *testing.T) {
+	dir := DefaultModelsDir()
+	if dir == "" {
+		t.Fatal("DefaultModelsDir() returned empty string")
+	}
+	if !strings.HasSuffix(dir, filepath.Join(".local", "share", "gostt-writer", "models")) {
+		t.Errorf("DefaultModelsDir() = %q, want suffix %q", dir, filepath.Join(".local", "share", "gostt-writer", "models"))
+	}
+}
+
+func TestResolveModelPathFallback(t *testing.T) {
+	// When configured path doesn't exist but relative does, prefer relative
+	tmpDir := t.TempDir()
+	relativePath := filepath.Join(tmpDir, "relative-model.bin")
+	if err := os.WriteFile(relativePath, []byte("fake"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Configured path doesn't exist
+	result := resolveModelPath("/nonexistent/model.bin", relativePath)
+	if result != relativePath {
+		t.Errorf("resolveModelPath() = %q, want %q (fallback)", result, relativePath)
+	}
+
+	// Configured path exists — should prefer it
+	configuredPath := filepath.Join(tmpDir, "configured-model.bin")
+	if err := os.WriteFile(configuredPath, []byte("fake"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	result = resolveModelPath(configuredPath, relativePath)
+	if result != configuredPath {
+		t.Errorf("resolveModelPath() = %q, want %q (configured)", result, configuredPath)
+	}
+
+	// Neither exists — should return configured (will fail later with clear error)
+	result = resolveModelPath("/nonexistent/a.bin", "/nonexistent/b.bin")
+	if result != "/nonexistent/a.bin" {
+		t.Errorf("resolveModelPath() = %q, want %q (configured fallthrough)", result, "/nonexistent/a.bin")
 	}
 }

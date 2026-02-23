@@ -9,19 +9,20 @@ transcribe:
   backend: whisper
 
   # Path to whisper.cpp model in ggml format (whisper backend only)
-  # Relative paths are resolved from the working directory (project root for 'task run')
-  # Use absolute path or ~ prefix for installed models
-  model_path: models/ggml-base.en.bin
+  # Default: ~/.local/share/gostt-writer/models/ggml-base.en.bin
+  # Falls back to models/ggml-base.en.bin in working directory if portable path not found
+  # Use absolute path or ~ prefix for custom locations
+  model_path: ~/.local/share/gostt-writer/models/ggml-base.en.bin
 
   # Directory containing Parakeet CoreML models + vocabulary (parakeet backend only)
   # Must contain: Preprocessor.mlmodelc, Encoder.mlmodelc, Decoder.mlmodelc,
   #               JointDecision.mlmodelc, parakeet_vocab.json
   # Download with: task parakeet-model
-  parakeet_model_dir: models/parakeet-tdt-v2
+  parakeet_model_dir: ~/.local/share/gostt-writer/models/parakeet-tdt-v2
 
 # DEPRECATED: top-level model_path is supported for backward compatibility.
 # If set and transcribe.model_path is not, it will be used as transcribe.model_path.
-# model_path: models/ggml-base.en.bin
+# model_path: ~/.local/share/gostt-writer/models/ggml-base.en.bin
 
 # Global hotkey configuration
 hotkey:
