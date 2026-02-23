@@ -273,22 +273,54 @@ tasks:
     cmds:
       - idf.py build
 
+  fw-port:
+    desc: Detect ESP32-S3 serial port
+    silent: true
+    cmds:
+      - |
+        PORT=$(ls /dev/cu.usbmodem* 2>/dev/null | head -1)
+        if [ -z "$PORT" ]; then
+          echo "No ESP32-S3 found. Is the device plugged in?" >&2
+          exit 1
+        fi
+        echo "$PORT"
+
   fw-flash:
     desc: Flash firmware to connected ESP32-S3
     dir: firmware/esp32
     cmds:
-      - idf.py -p {{.CLI_ARGS | default "/dev/cu.usbmodem*"}} flash
+      - |
+        PORT="${FW_PORT:-$(ls /dev/cu.usbmodem* 2>/dev/null | head -1)}"
+        if [ -z "$PORT" ]; then
+          echo "No ESP32-S3 found. Is the device plugged in?" >&2
+          exit 1
+        fi
+        echo "Flashing to $PORT..."
+        idf.py -p "$PORT" flash
 
   fw-monitor:
     desc: Serial monitor for ESP32-S3
     dir: firmware/esp32
     interactive: true
     cmds:
-      - idf.py -p {{.CLI_ARGS | default "/dev/cu.usbmodem*"}} monitor
+      - |
+        PORT="${FW_PORT:-$(ls /dev/cu.usbmodem* 2>/dev/null | head -1)}"
+        if [ -z "$PORT" ]; then
+          echo "No ESP32-S3 found. Is the device plugged in?" >&2
+          exit 1
+        fi
+        idf.py -p "$PORT" monitor
 
   fw-flash-monitor:
     desc: Flash firmware and open serial monitor
     dir: firmware/esp32
     interactive: true
     cmds:
-      - idf.py -p {{.CLI_ARGS | default "/dev/cu.usbmodem*"}} flash monitor
+      - |
+        PORT="${FW_PORT:-$(ls /dev/cu.usbmodem* 2>/dev/null | head -1)}"
+        if [ -z "$PORT" ]; then
+          echo "No ESP32-S3 found. Is the device plugged in?" >&2
+          exit 1
+        fi
+        echo "Flashing to $PORT..."
+        idf.py -p "$PORT" flash monitor
