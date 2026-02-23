@@ -4,9 +4,11 @@ Custom firmware that turns an ESP32-S3 into a BLE-to-USB-HID keyboard bridge. It
 
 ## Hardware
 
-Any ESP32-S3 development board with USB-OTG support. Tested with the **ESP32-S3-DevKitC-1**.
+Any ESP32-S3 development board with **two USB-C ports** (one UART, one native USB-OTG) should work. The key requirement is the S3 variant — it has native USB-OTG for HID keyboard emulation.
 
-The board has two USB-C ports:
+**Tested with:** [Lonely Binary ESP32-S3 N16R8 Gold Edition](https://www.amazon.com/dp/B0FL149DGM) (16MB Flash, 8MB PSRAM, CH343 USB-UART, dual USB-C). A 3-pack runs ~$40.
+
+The two USB-C ports serve different purposes:
 
 | Port     | Purpose                              |
 | -------- | ------------------------------------ |

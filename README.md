@@ -309,7 +309,7 @@ task ble-pair          # Pair with gostt-writer
 
 ### Hardware
 
-Any ESP32-S3 development board with USB-OTG support (e.g., ESP32-S3-DevKitC-1). The board has two USB-C ports: **UART** (for flashing) and **USB** (HID keyboard output to target).
+Any ESP32-S3 board with two USB-C ports (UART + native USB-OTG) should work. Tested with the [Lonely Binary ESP32-S3 N16R8](https://www.amazon.com/dp/B0FL149DGM) (~$40 for a 3-pack). The two ports serve different roles: **UART** for flashing and **USB** for HID keyboard output to the target device.
 
 ### LED Status
 
