@@ -52,7 +52,7 @@ func DownloadWhisper() error {
 	if err != nil {
 		return fmt.Errorf("downloading whisper model: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download failed: HTTP %d", resp.StatusCode)
@@ -73,16 +73,16 @@ func DownloadWhisper() error {
 	}
 
 	written, err := io.Copy(pr, resp.Body)
-	f.Close()
+	_ = f.Close()
 	if err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("writing model file: %w", err)
 	}
 
 	fmt.Printf("\n  Downloaded %.1f MB\n", float64(written)/(1024*1024))
 
 	if err := os.Rename(tmpPath, destPath); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("moving model file: %w", err)
 	}
 
@@ -124,7 +124,7 @@ func DownloadParakeet() error {
 	if err != nil {
 		return fmt.Errorf("creating temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Sparse checkout + LFS
 	cmds := []struct {
@@ -214,13 +214,13 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 
 	out, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	_, err = io.Copy(out, in)
 	return err
@@ -267,7 +267,9 @@ func RunInteractiveDownload() error {
 	fmt.Print("Choice [1/2/3]: ")
 
 	var choice string
-	fmt.Scanln(&choice)
+	if _, err := fmt.Scanln(&choice); err != nil {
+		return fmt.Errorf("reading input: %w", err)
+	}
 	choice = strings.TrimSpace(choice)
 
 	fmt.Println()
