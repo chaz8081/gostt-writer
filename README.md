@@ -9,9 +9,10 @@ Local real-time dictation for macOS. Press a hotkey, speak, and your words are t
 ## Prerequisites
 
 - macOS on Apple Silicon (M1 or later)
-- [Go 1.21+](https://go.dev/dl/)
+- [Go 1.25+](https://go.dev/dl/)
 - [Task](https://taskfile.dev/) (`brew install go-task`)
 - [CMake](https://cmake.org/) (`brew install cmake`)
+- [Python 3.8+](https://www.python.org/) (required by ESP-IDF toolchain)
 - Xcode Command Line Tools (`xcode-select --install`)
 
 ## Build & Install
@@ -55,6 +56,14 @@ gostt-writer needs two permissions to function:
 2. Add your terminal app if it isn't already listed
 3. Toggle it on
 
+**Bluetooth** (required for BLE output to ESP32-S3):
+
+1. Open **System Settings > Privacy & Security > Bluetooth**
+2. Add your terminal app if it isn't already listed
+3. Toggle it on
+
+> Bluetooth permission is only needed if you use `inject.method: ble` to send text to an ESP32-S3.
+
 You may need to restart your terminal after granting permissions.
 
 ## Quick Start
@@ -72,6 +81,30 @@ task run
 Then press `Ctrl+Shift+R`, speak, and release. Your words will be typed into whatever application has focus.
 
 Press `Ctrl+C` to quit.
+
+## BLE Quick Start (ESP32-S3)
+
+To use gostt-writer with an ESP32-S3 as a wireless USB keyboard:
+
+1. **Set up the firmware** (one-time):
+   ```bash
+   git submodule update --init third_party/esp-idf
+   third_party/esp-idf/install.sh esp32s3
+   task fw-build
+   task fw-flash          # ESP32-S3 connected via UART port
+   ```
+
+2. **Pair** (one-time):
+   ```bash
+   task ble-pair           # Scans for ESP32-S3, exchanges encryption keys
+   ```
+
+3. **Use it**:
+   ```bash
+   gostt-writer            # Press Ctrl+Shift+R, speak, text appears on ESP32's USB host
+   ```
+
+The ESP32-S3 acts as a USB HID keyboard on whatever device it's plugged into (phone, tablet, PC). Text is encrypted end-to-end with AES-256-GCM over BLE.
 
 ## Running in the Background with tmux
 
@@ -258,6 +291,10 @@ task fw-build          # Build firmware
 task fw-flash-monitor  # Flash and open serial monitor
 task ble-pair          # Pair with gostt-writer
 ```
+
+> **Note:** The ESP-IDF submodule is ~1.8 GB. Initial `git submodule update --init` takes 5-15 minutes depending on your connection. The toolchain install (`install.sh esp32s3`) adds another ~1.5 GB and takes 5-10 minutes.
+
+> **ESP-IDF version:** This project uses ESP-IDF v6.1-dev (a development snapshot, not a stable release). It is pinned as a git submodule at a specific commit and has been tested thoroughly with this firmware.
 
 ### Hardware
 
