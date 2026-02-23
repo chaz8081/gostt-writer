@@ -4,7 +4,7 @@
 [![Lint](https://github.com/chaz8081/gostt-writer/actions/workflows/lint.yml/badge.svg)](https://github.com/chaz8081/gostt-writer/actions/workflows/lint.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/chaz8081/gostt-writer)](https://goreportcard.com/report/github.com/chaz8081/gostt-writer)
 [![GitHub Release](https://img.shields.io/github/v/release/chaz8081/gostt-writer)](https://github.com/chaz8081/gostt-writer/releases/latest)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](LICENSE)
 
 Local real-time dictation for macOS. Press a hotkey, speak, and your words are typed into the active application. All processing happens on-device -- nothing is sent to the cloud. Choose between [whisper.cpp](https://github.com/ggerganov/whisper.cpp) (default) or [Parakeet TDT 0.6B v2](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v2-coreml) via CoreML for Apple Neural Engine acceleration.
 
