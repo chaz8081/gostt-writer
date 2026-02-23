@@ -186,7 +186,7 @@ gostt-writer is designed to be fully offline. After installation, the applicatio
 
 ### BLE output (optional)
 
-When configured with `inject.method: ble`, gostt-writer sends transcribed text over **Bluetooth Low Energy** to an ESP32-S3 running [ToothPaste](https://github.com/Brisk4t/ToothPaste) firmware, which acts as a USB HID keyboard on any target device. This is a **local radio link**, not an internet connection:
+When configured with `inject.method: ble`, gostt-writer sends transcribed text over **Bluetooth Low Energy** to an ESP32-S3 running the GOSTT-KBD firmware (see [ESP32-S3 Firmware](#esp32-s3-firmware) below), which acts as a USB HID keyboard on any target device. This is a **local radio link**, not an internet connection:
 
 - **Short range.** BLE operates within ~10 meters. No data leaves the room.
 - **Encrypted end-to-end.** All BLE traffic is encrypted with AES-256-GCM using a pre-shared key established during pairing (ECDH P-256 key exchange).
@@ -244,22 +244,88 @@ To use Parakeet:
      backend: parakeet
    ```
 
+## ESP32-S3 Firmware
+
+The `firmware/esp32/` directory contains custom GOSTT-KBD firmware for the ESP32-S3. It acts as a USB HID keyboard on the target device and receives encrypted text from gostt-writer over BLE.
+
+### Hardware
+
+Any ESP32-S3 development board with USB-OTG support (e.g., ESP32-S3-DevKitC-1). The firmware uses:
+
+- **GPIO 48** — WS2812 addressable LED (standard on most ESP32-S3 dev boards)
+- **GPIO 0** — BOOT button (used for factory reset)
+
+### Software Requirements
+
+- [ESP-IDF v5.x](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/get-started/)
+
+### Build & Flash
+
+```bash
+task fw-build          # Build firmware
+task fw-flash          # Flash to connected device
+task fw-monitor        # Serial monitor
+task fw-flash-monitor  # Flash and monitor in one step
+task fw-test           # Run host-side protobuf tests
+```
+
+### Pairing
+
+1. Flash the firmware to the ESP32-S3
+2. Plug the ESP32-S3 into the target device via USB (it enumerates as a USB HID keyboard)
+3. On your Mac, run `task ble-pair` (or `gostt-writer --ble-pair`)
+4. Pairing uses ECDH P-256 key exchange over BLE — the shared secret is saved to your config
+5. Set `inject.method: ble` in `~/.config/gostt-writer/config.yaml`
+
+### LED Status
+
+| LED State             | Color    | Meaning                              |
+| --------------------- | -------- | ------------------------------------ |
+| Slow blink            | Blue     | Advertising (waiting for BLE connection) |
+| Solid                 | Blue     | Connected (not yet paired)           |
+| Solid                 | Green    | Paired and ready                     |
+| Brief flash           | White    | Typing in progress                   |
+| Triple flash          | Red      | Error                                |
+| Alternating           | Red/Blue | Factory reset in progress            |
+
+### Factory Reset
+
+Hold the **BOOT** button for 5 seconds at startup. This erases all stored keys and mute configuration. The device restarts in an unpaired state.
+
+### Mute Button
+
+By default, the ESP32 sends USB Consumer Control Mute (`0x00E2`) when a mute command is received via BLE. This can be reconfigured through BLE commands to use keyboard shortcuts instead.
+
+### Troubleshooting
+
+- **LED stays off** — Check USB connection and ensure the firmware was flashed successfully (`task fw-flash-monitor` to see boot output).
+- **BLE pairing fails** — Make sure the ESP32-S3 is advertising (slow blue blink). Only one BLE connection is supported at a time.
+- **Typed text is garbled** — Verify the target device recognizes the ESP32 as a USB HID keyboard. Try a different USB port or cable.
+- **Mute key not working** — Some applications ignore Consumer Control keys. Reconfigure to use a keyboard shortcut via BLE commands.
+
+For architecture details, see the design documentation.
+
 ## Tasks
 
 Run `task --list` to see all available tasks:
 
-| Task             | Description                                              |
-| ---------------- | -------------------------------------------------------- |
-| `task`           | Build everything (whisper.cpp + whisper model + binary)  |
-| `task install`   | Build, download models, and install to /usr/local/bin    |
-| `task models`    | Download transcription models (interactive)              |
-| `task backend`   | Switch the active transcription backend in your config   |
-| `task build`     | Build the gostt-writer binary                            |
-| `task run`       | Build and run gostt-writer                               |
-| `task test`      | Run all tests                                            |
-| `task ble-pair`  | Pair with an ESP32-S3 running ToothPaste firmware        |
-| `task whisper`   | Build whisper.cpp static library (Metal + Accelerate)    |
-| `task clean`     | Remove build artifacts                                   |
+| Task                | Description                                              |
+| ------------------- | -------------------------------------------------------- |
+| `task`              | Build everything (whisper.cpp + whisper model + binary)  |
+| `task install`      | Build, download models, and install to /usr/local/bin    |
+| `task models`       | Download transcription models (interactive)              |
+| `task backend`      | Switch the active transcription backend in your config   |
+| `task build`        | Build the gostt-writer binary                            |
+| `task run`          | Build and run gostt-writer                               |
+| `task test`         | Run all tests                                            |
+| `task ble-pair`     | Pair with an ESP32-S3 running GOSTT-KBD firmware         |
+| `task fw-build`     | Build ESP32-S3 firmware                                  |
+| `task fw-flash`     | Flash firmware to connected ESP32-S3                     |
+| `task fw-monitor`   | Open serial monitor for ESP32-S3                         |
+| `task fw-flash-monitor` | Flash firmware and open serial monitor               |
+| `task fw-test`      | Run host-side protobuf cross-validation tests            |
+| `task whisper`      | Build whisper.cpp static library (Metal + Accelerate)    |
+| `task clean`        | Remove build artifacts                                   |
 
 ## Version
 
