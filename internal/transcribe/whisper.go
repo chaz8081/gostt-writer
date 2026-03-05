@@ -23,6 +23,12 @@ func NewWhisperTranscriber(modelPath string) (*WhisperTranscriber, error) {
 	return &WhisperTranscriber{model: model}, nil
 }
 
+// Model returns the underlying whisper model. Used by StreamingTranscriber
+// to share the loaded model without duplicating it in memory.
+func (t *WhisperTranscriber) Model() whisper.Model {
+	return t.model
+}
+
 // Close releases the whisper model resources.
 func (t *WhisperTranscriber) Close() error {
 	if t.model != nil {

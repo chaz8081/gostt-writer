@@ -20,6 +20,16 @@ transcribe:
   # Download with: task parakeet-model
   parakeet_model_dir: ~/.local/share/gostt-writer/models/parakeet-tdt-v2
 
+  # Streaming transcription (whisper only)
+  # When enabled, text appears incrementally as you speak instead of all at once
+  # after you stop. Uses a sliding-window approach matching whisper.cpp's stream.cpp.
+  # Not supported with parakeet backend or BLE injection.
+  streaming:
+    enabled: false      # set to true for real-time text as you speak
+    step_ms: 3000       # transcribe every N ms (lower = more responsive, more CPU)
+    length_ms: 10000    # audio window size in ms (max context for each transcription)
+    keep_ms: 200        # overlap between windows for continuity
+
 # DEPRECATED: top-level model_path is supported for backward compatibility.
 # If set and transcribe.model_path is not, it will be used as transcribe.model_path.
 # model_path: ~/.local/share/gostt-writer/models/ggml-base.en.bin
@@ -53,6 +63,22 @@ inject:
   #   shared_secret: "..."
   #   queue_size: 64        # max buffered messages during BLE disconnect (default: 64)
   #   reconnect_max: 30     # max reconnect backoff in seconds (default: 30)
+
+# LLM post-processing (optional)
+# Sends transcribed text to a local Ollama LLM for rewriting before injection.
+# Requires Ollama running locally: https://ollama.com
+# Quick setup:  task ollama-setup
+# Health check: task ollama-check
+#
+# In streaming mode, raw text appears live; rewritten text replaces it after you stop.
+# Note: first request may be slow if Ollama needs to load the model (~10-30s).
+# Increase timeout_secs if you experience timeouts on cold starts.
+# rewrite:
+#   enabled: false
+#   ollama_url: "http://localhost:11434"
+#   model: "llama3.2"
+#   prompt: "Clean up this dictated text. Fix grammar, remove filler words. Output only the cleaned text."
+#   timeout_secs: 10
 
 # Log level: debug, info, warn, error
 log_level: info

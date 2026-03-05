@@ -56,6 +56,83 @@ func TestStopWithoutStart(t *testing.T) {
 	}
 }
 
+func TestSnapshotWithoutRecording(t *testing.T) {
+	r, err := NewRecorder(16000, 1)
+	if err != nil {
+		t.Fatalf("NewRecorder() error = %v", err)
+	}
+	defer func() {
+		if err := r.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	}()
+
+	snap := r.Snapshot()
+	if snap != nil {
+		t.Errorf("Snapshot() without recording should return nil, got %d samples", len(snap))
+	}
+}
+
+func TestSnapshotReturnsCopy(t *testing.T) {
+	r, err := NewRecorder(16000, 1)
+	if err != nil {
+		t.Fatalf("NewRecorder() error = %v", err)
+	}
+	defer func() {
+		if err := r.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	}()
+
+	// Simulate recording state with data in the buffer
+	r.mu.Lock()
+	r.recording = true
+	r.buf = []float32{1.0, 2.0, 3.0}
+	r.mu.Unlock()
+
+	snap := r.Snapshot()
+	if snap == nil {
+		t.Fatal("Snapshot() should return data when recording with buffer")
+	}
+	if len(snap) != 3 {
+		t.Fatalf("Snapshot() returned %d samples, want 3", len(snap))
+	}
+	if snap[0] != 1.0 || snap[1] != 2.0 || snap[2] != 3.0 {
+		t.Errorf("Snapshot() = %v, want [1.0 2.0 3.0]", snap)
+	}
+
+	// Verify it's a copy by mutating the snapshot
+	snap[0] = 999.0
+	r.mu.Lock()
+	if r.buf[0] != 1.0 {
+		t.Error("Snapshot() should return a copy, but original buffer was modified")
+	}
+	r.mu.Unlock()
+}
+
+func TestSnapshotEmptyBuffer(t *testing.T) {
+	r, err := NewRecorder(16000, 1)
+	if err != nil {
+		t.Fatalf("NewRecorder() error = %v", err)
+	}
+	defer func() {
+		if err := r.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	}()
+
+	// Recording but empty buffer
+	r.mu.Lock()
+	r.recording = true
+	r.buf = []float32{}
+	r.mu.Unlock()
+
+	snap := r.Snapshot()
+	if snap != nil {
+		t.Errorf("Snapshot() with empty buffer should return nil, got %d samples", len(snap))
+	}
+}
+
 func TestBytesToFloat32(t *testing.T) {
 	// Test with known float32 value: 1.0 = 0x3F800000
 	data := []byte{0x00, 0x00, 0x80, 0x3F} // 1.0 in little-endian float32

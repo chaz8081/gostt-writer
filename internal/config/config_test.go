@@ -495,6 +495,114 @@ inject:
 	}
 }
 
+func TestValidateStreamingWithParakeetFails(t *testing.T) {
+	cfg := Default()
+	cfg.Transcribe.Backend = "parakeet"
+	cfg.Transcribe.ParakeetModelDir = "/some/dir"
+	cfg.Transcribe.Streaming.Enabled = true
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Validate() should fail when streaming enabled with parakeet backend")
+	}
+}
+
+func TestValidateStreamingWithBLEFails(t *testing.T) {
+	cfg := Default()
+	cfg.Transcribe.Streaming.Enabled = true
+	cfg.Inject.Method = "ble"
+	cfg.Inject.BLE.DeviceMAC = "AA:BB:CC:DD:EE:FF"
+	cfg.Inject.BLE.SharedSecret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Validate() should fail when streaming enabled with BLE injection")
+	}
+}
+
+func TestValidateStreamingStepExceedsLength(t *testing.T) {
+	cfg := Default()
+	cfg.Transcribe.Streaming.Enabled = true
+	cfg.Transcribe.Streaming.StepMs = 15000
+	cfg.Transcribe.Streaming.LengthMs = 10000
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Validate() should fail when step_ms > length_ms")
+	}
+}
+
+func TestValidateStreamingKeepClamped(t *testing.T) {
+	cfg := Default()
+	cfg.Transcribe.Streaming.Enabled = true
+	cfg.Transcribe.Streaming.KeepMs = 5000
+	cfg.Transcribe.Streaming.StepMs = 3000
+	err := cfg.Validate()
+	if err != nil {
+		t.Errorf("Validate() unexpected error: %v", err)
+	}
+	if cfg.Transcribe.Streaming.KeepMs != cfg.Transcribe.Streaming.StepMs {
+		t.Errorf("KeepMs = %d, want %d (clamped to StepMs)", cfg.Transcribe.Streaming.KeepMs, cfg.Transcribe.Streaming.StepMs)
+	}
+}
+
+func TestValidateStreamingValidConfig(t *testing.T) {
+	cfg := Default()
+	cfg.Transcribe.Streaming.Enabled = true
+	err := cfg.Validate()
+	if err != nil {
+		t.Errorf("Validate() unexpected error for valid streaming config: %v", err)
+	}
+}
+
+func TestDefaultStreamingConfig(t *testing.T) {
+	cfg := Default()
+	sc := cfg.Transcribe.Streaming
+	if sc.Enabled {
+		t.Error("default streaming should be disabled")
+	}
+	if sc.StepMs != 3000 {
+		t.Errorf("StepMs = %d, want 3000", sc.StepMs)
+	}
+	if sc.LengthMs != 10000 {
+		t.Errorf("LengthMs = %d, want 10000", sc.LengthMs)
+	}
+	if sc.KeepMs != 200 {
+		t.Errorf("KeepMs = %d, want 200", sc.KeepMs)
+	}
+}
+
+func TestLoadStreamingConfig(t *testing.T) {
+	yamlContent := `
+transcribe:
+  streaming:
+    enabled: true
+    step_ms: 2000
+    length_ms: 8000
+    keep_ms: 500
+`
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if !cfg.Transcribe.Streaming.Enabled {
+		t.Error("Streaming.Enabled should be true")
+	}
+	if cfg.Transcribe.Streaming.StepMs != 2000 {
+		t.Errorf("StepMs = %d, want 2000", cfg.Transcribe.Streaming.StepMs)
+	}
+	if cfg.Transcribe.Streaming.LengthMs != 8000 {
+		t.Errorf("LengthMs = %d, want 8000", cfg.Transcribe.Streaming.LengthMs)
+	}
+	if cfg.Transcribe.Streaming.KeepMs != 500 {
+		t.Errorf("KeepMs = %d, want 500", cfg.Transcribe.Streaming.KeepMs)
+	}
+}
+
 func TestParseLogLevel(t *testing.T) {
 	tests := []struct {
 		input string
@@ -535,6 +643,125 @@ func TestDefaultModelsDir(t *testing.T) {
 	}
 	if !strings.HasSuffix(dir, filepath.Join(".local", "share", "gostt-writer", "models")) {
 		t.Errorf("DefaultModelsDir() = %q, want suffix %q", dir, filepath.Join(".local", "share", "gostt-writer", "models"))
+	}
+}
+
+func TestDefaultRewriteConfig(t *testing.T) {
+	cfg := Default()
+	if cfg.Rewrite.Enabled {
+		t.Error("default rewrite should be disabled")
+	}
+	if cfg.Rewrite.OllamaURL != "http://localhost:11434" {
+		t.Errorf("Rewrite.OllamaURL = %q, want %q", cfg.Rewrite.OllamaURL, "http://localhost:11434")
+	}
+	if cfg.Rewrite.TimeoutSecs != 10 {
+		t.Errorf("Rewrite.TimeoutSecs = %d, want 10", cfg.Rewrite.TimeoutSecs)
+	}
+}
+
+func TestValidateRewriteDisabledNoError(t *testing.T) {
+	cfg := Default()
+	cfg.Rewrite.Enabled = false
+	// Missing model/prompt should be fine when disabled
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate() unexpected error for disabled rewrite: %v", err)
+	}
+}
+
+func TestValidateRewriteEnabledMissingModel(t *testing.T) {
+	cfg := Default()
+	cfg.Rewrite.Enabled = true
+	cfg.Rewrite.Prompt = "Fix grammar."
+	cfg.Rewrite.Model = ""
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Validate() should fail when rewrite enabled without model")
+	}
+}
+
+func TestValidateRewriteEnabledMissingPrompt(t *testing.T) {
+	cfg := Default()
+	cfg.Rewrite.Enabled = true
+	cfg.Rewrite.Model = "llama3.2"
+	cfg.Rewrite.Prompt = ""
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Validate() should fail when rewrite enabled without prompt")
+	}
+}
+
+func TestValidateRewriteEnabledBadTimeout(t *testing.T) {
+	cfg := Default()
+	cfg.Rewrite.Enabled = true
+	cfg.Rewrite.Model = "llama3.2"
+	cfg.Rewrite.Prompt = "Fix grammar."
+	cfg.Rewrite.TimeoutSecs = 0
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Validate() should fail when rewrite timeout_secs <= 0")
+	}
+}
+
+func TestValidateRewriteEnabledValid(t *testing.T) {
+	cfg := Default()
+	cfg.Rewrite.Enabled = true
+	cfg.Rewrite.Model = "llama3.2"
+	cfg.Rewrite.Prompt = "Fix grammar."
+	err := cfg.Validate()
+	if err != nil {
+		t.Errorf("Validate() unexpected error for valid rewrite config: %v", err)
+	}
+}
+
+func TestValidateRewriteStreamingBLEFails(t *testing.T) {
+	cfg := Default()
+	cfg.Rewrite.Enabled = true
+	cfg.Rewrite.Model = "llama3.2"
+	cfg.Rewrite.Prompt = "Fix grammar."
+	cfg.Transcribe.Streaming.Enabled = true
+	cfg.Inject.Method = "ble"
+	cfg.Inject.BLE.DeviceMAC = "AA:BB:CC:DD:EE:FF"
+	cfg.Inject.BLE.SharedSecret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	err := cfg.Validate()
+	if err == nil {
+		t.Error("Validate() should fail for streaming + rewrite + BLE")
+	}
+}
+
+func TestLoadRewriteConfig(t *testing.T) {
+	yamlContent := `
+rewrite:
+  enabled: true
+  ollama_url: "http://myserver:11434"
+  model: "mistral"
+  prompt: "Rewrite as pirate."
+  timeout_secs: 30
+`
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if !cfg.Rewrite.Enabled {
+		t.Error("Rewrite.Enabled should be true")
+	}
+	if cfg.Rewrite.OllamaURL != "http://myserver:11434" {
+		t.Errorf("Rewrite.OllamaURL = %q, want %q", cfg.Rewrite.OllamaURL, "http://myserver:11434")
+	}
+	if cfg.Rewrite.Model != "mistral" {
+		t.Errorf("Rewrite.Model = %q, want %q", cfg.Rewrite.Model, "mistral")
+	}
+	if cfg.Rewrite.Prompt != "Rewrite as pirate." {
+		t.Errorf("Rewrite.Prompt = %q, want %q", cfg.Rewrite.Prompt, "Rewrite as pirate.")
+	}
+	if cfg.Rewrite.TimeoutSecs != 30 {
+		t.Errorf("Rewrite.TimeoutSecs = %d, want 30", cfg.Rewrite.TimeoutSecs)
 	}
 }
 

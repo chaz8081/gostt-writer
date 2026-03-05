@@ -104,6 +104,19 @@ func (r *Recorder) Stop() []float32 {
 	return result
 }
 
+// Snapshot returns a copy of the accumulated audio buffer without stopping
+// recording. Returns nil if not recording or buffer is empty. Thread-safe.
+func (r *Recorder) Snapshot() []float32 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.recording || len(r.buf) == 0 {
+		return nil
+	}
+	result := make([]float32, len(r.buf))
+	copy(result, r.buf)
+	return result
+}
+
 // IsRecording returns whether the recorder is currently capturing audio.
 func (r *Recorder) IsRecording() bool {
 	r.mu.Lock()

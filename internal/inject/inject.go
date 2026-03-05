@@ -41,6 +41,21 @@ func (inj *Injector) Inject(text string) error {
 	}
 }
 
+// InjectDelta applies an incremental edit: send backspace keys to delete
+// the divergent suffix, then type the new text. Used by streaming mode for
+// corrections when the sliding window revises earlier transcription.
+func (inj *Injector) InjectDelta(backspaces int, newText string) error {
+	for i := 0; i < backspaces; i++ {
+		if err := robotgo.KeyTap("backspace"); err != nil {
+			return fmt.Errorf("inject: backspace: %w", err)
+		}
+	}
+	if newText != "" {
+		robotgo.Type(newText)
+	}
+	return nil
+}
+
 // typeText simulates individual keystrokes. Preserves clipboard contents
 // but is slower for long text.
 func (inj *Injector) typeText(text string) error {

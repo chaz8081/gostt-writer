@@ -18,14 +18,33 @@ type Config struct {
 	Hotkey     HotkeyConfig     `yaml:"hotkey"`
 	Audio      AudioConfig      `yaml:"audio"`
 	Inject     InjectConfig     `yaml:"inject"`
+	Rewrite    RewriteConfig    `yaml:"rewrite"`
 	LogLevel   string           `yaml:"log_level"`
+}
+
+// RewriteConfig holds LLM post-processing settings via Ollama.
+type RewriteConfig struct {
+	Enabled     bool   `yaml:"enabled"`      // send transcribed text to LLM before injection
+	OllamaURL   string `yaml:"ollama_url"`   // Ollama API base URL
+	Model       string `yaml:"model"`        // Ollama model name (e.g. "llama3.2")
+	Prompt      string `yaml:"prompt"`       // system prompt controlling rewrite style
+	TimeoutSecs int    `yaml:"timeout_secs"` // per-request timeout in seconds
 }
 
 // TranscribeConfig holds transcription backend settings.
 type TranscribeConfig struct {
-	Backend          string `yaml:"backend"`            // "whisper" or "parakeet"
-	ModelPath        string `yaml:"model_path"`         // whisper: path to ggml model file
-	ParakeetModelDir string `yaml:"parakeet_model_dir"` // parakeet: dir with .mlmodelc files + vocab
+	Backend          string          `yaml:"backend"`            // "whisper" or "parakeet"
+	ModelPath        string          `yaml:"model_path"`         // whisper: path to ggml model file
+	ParakeetModelDir string          `yaml:"parakeet_model_dir"` // parakeet: dir with .mlmodelc files + vocab
+	Streaming        StreamingConfig `yaml:"streaming"`          // real-time streaming settings (whisper only)
+}
+
+// StreamingConfig holds streaming transcription settings.
+type StreamingConfig struct {
+	Enabled  bool `yaml:"enabled"`   // enable real-time streaming (default: false)
+	StepMs   int  `yaml:"step_ms"`   // transcribe interval in ms (default: 3000)
+	LengthMs int  `yaml:"length_ms"` // audio window size in ms (default: 10000)
+	KeepMs   int  `yaml:"keep_ms"`   // overlap between windows in ms (default: 200)
 }
 
 // HotkeyConfig holds hotkey-related settings.
@@ -91,6 +110,12 @@ func Default() *Config {
 			Backend:          "whisper",
 			ModelPath:        filepath.Join(modelsDir, "ggml-base.en.bin"),
 			ParakeetModelDir: filepath.Join(modelsDir, "parakeet-tdt-v2"),
+			Streaming: StreamingConfig{
+				Enabled:  false,
+				StepMs:   3000,
+				LengthMs: 10000,
+				KeepMs:   200,
+			},
 		},
 		Hotkey: HotkeyConfig{
 			Keys: []string{"ctrl", "shift", "r"},
@@ -102,6 +127,11 @@ func Default() *Config {
 		},
 		Inject: InjectConfig{
 			Method: "type",
+		},
+		Rewrite: RewriteConfig{
+			Enabled:     false,
+			OllamaURL:   "http://localhost:11434",
+			TimeoutSecs: 10,
 		},
 		LogLevel: "info",
 	}
@@ -172,6 +202,29 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("transcribe.backend must be \"whisper\" or \"parakeet\", got %q", c.Transcribe.Backend)
 	}
 
+	// Validate streaming config
+	if c.Transcribe.Streaming.Enabled {
+		if c.Transcribe.Backend == "parakeet" {
+			return fmt.Errorf("streaming is not supported with the parakeet backend (fixed 15s CoreML input)")
+		}
+		if c.Inject.Method == "ble" {
+			return fmt.Errorf("streaming is not supported with BLE injection")
+		}
+		if c.Transcribe.Streaming.StepMs > c.Transcribe.Streaming.LengthMs {
+			return fmt.Errorf("transcribe.streaming.step_ms (%d) must not exceed length_ms (%d)",
+				c.Transcribe.Streaming.StepMs, c.Transcribe.Streaming.LengthMs)
+		}
+		if c.Transcribe.Streaming.KeepMs > c.Transcribe.Streaming.StepMs {
+			slog.Warn("transcribe.streaming.keep_ms exceeds step_ms, clamping",
+				"keep_ms", c.Transcribe.Streaming.KeepMs,
+				"step_ms", c.Transcribe.Streaming.StepMs)
+			c.Transcribe.Streaming.KeepMs = c.Transcribe.Streaming.StepMs
+		}
+		if c.Hotkey.Mode == "hold" {
+			slog.Warn("streaming with hold mode: text appears while key is held, corrections may occur on release")
+		}
+	}
+
 	if len(c.Hotkey.Keys) == 0 {
 		return fmt.Errorf("hotkey.keys must not be empty")
 	}
@@ -207,6 +260,21 @@ func (c *Config) Validate() error {
 		}
 	default:
 		return fmt.Errorf("inject.method must be \"type\", \"paste\", or \"ble\", got %q", c.Inject.Method)
+	}
+
+	if c.Rewrite.Enabled {
+		if c.Rewrite.Model == "" {
+			return fmt.Errorf("rewrite.model is required when rewrite is enabled")
+		}
+		if c.Rewrite.Prompt == "" {
+			return fmt.Errorf("rewrite.prompt is required when rewrite is enabled")
+		}
+		if c.Rewrite.TimeoutSecs <= 0 {
+			return fmt.Errorf("rewrite.timeout_secs must be > 0, got %d", c.Rewrite.TimeoutSecs)
+		}
+		if c.Transcribe.Streaming.Enabled && c.Inject.Method == "ble" {
+			return fmt.Errorf("streaming + rewrite is not supported with BLE injection (BLE cannot backspace)")
+		}
 	}
 
 	switch c.LogLevel {

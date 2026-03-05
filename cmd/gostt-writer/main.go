@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/hex"
 	"flag"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"os/signal"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -18,6 +20,7 @@ import (
 	"github.com/chaz8081/gostt-writer/internal/hotkey"
 	"github.com/chaz8081/gostt-writer/internal/inject"
 	"github.com/chaz8081/gostt-writer/internal/models"
+	"github.com/chaz8081/gostt-writer/internal/rewrite"
 	"github.com/chaz8081/gostt-writer/internal/transcribe"
 )
 
@@ -26,7 +29,7 @@ var version = "dev"
 
 const (
 	minRecordingDuration = 0.5  // seconds
-	maxRecordingDuration = 30.0 // seconds
+	maxRecordingDuration = 120.0 // seconds
 )
 
 func main() {
@@ -85,6 +88,22 @@ func main() {
 	}
 	slog.Info("Model loaded", "backend", cfg.Transcribe.Backend, "elapsed", time.Since(modelStart).Round(time.Millisecond))
 
+	// Initialize streaming transcriber if enabled (whisper only)
+	var streamer *transcribe.StreamingTranscriber
+	if cfg.Transcribe.Streaming.Enabled {
+		wt, ok := transcriber.(*transcribe.WhisperTranscriber)
+		if !ok {
+			slog.Error("Streaming requires whisper backend")
+			os.Exit(1)
+		}
+		sc := cfg.Transcribe.Streaming
+		streamer = transcribe.NewStreamingTranscriber(wt.Model(), sc.StepMs, sc.LengthMs, sc.KeepMs)
+		slog.Info("Streaming transcription enabled",
+			"step_ms", sc.StepMs,
+			"length_ms", sc.LengthMs,
+			"keep_ms", sc.KeepMs)
+	}
+
 	// Initialize audio recorder
 	recorder, err := audio.NewRecorder(cfg.Audio.SampleRate, cfg.Audio.Channels)
 	if err != nil {
@@ -128,6 +147,14 @@ func main() {
 		slog.Info("Text injector ready", "method", cfg.Inject.Method)
 	}
 
+	// Initialize LLM rewriter (optional)
+	var rewriter *rewrite.Rewriter
+	var rewriting atomic.Bool
+	if cfg.Rewrite.Enabled {
+		rewriter = rewrite.New(&cfg.Rewrite)
+		slog.Info("LLM rewrite enabled", "model", cfg.Rewrite.Model)
+	}
+
 	// Initialize hotkey listener
 	listener := hotkey.NewListener(cfg.Hotkey.Keys, cfg.Hotkey.Mode)
 	slog.Info("Hotkey listener ready",
@@ -168,68 +195,130 @@ func main() {
 
 				switch ev.Type {
 				case hotkey.EventStart:
+					if rewriting.Load() {
+						slog.Warn("LLM rewrite in progress, ignoring hotkey")
+						continue
+					}
 					if err := recorder.Start(); err != nil {
 						slog.Error("Failed to start recording", "error", err)
 						continue
 					}
 					slog.Info("Recording...")
 
+					// Start streaming transcription if enabled
+					if streamer != nil {
+						localInjector := injector.(*inject.Injector)
+						streamer.Start(
+							recorder.Snapshot,
+							func(backspaces int, newText string) {
+								if err := localInjector.InjectDelta(backspaces, newText); err != nil {
+									slog.Error("Streaming injection failed", "error", err)
+								}
+							},
+						)
+					}
+
 				case hotkey.EventStop:
-					samples := recorder.Stop()
-					if samples == nil {
-						continue
-					}
+					if streamer != nil {
+						// Streaming mode: stop streamer first (does final transcription),
+						// then stop recording
+						streamer.Stop()
+						recorder.Stop()
+						slog.Info("Streaming transcription complete")
 
-					duration := float64(len(samples)) / float64(cfg.Audio.SampleRate)
-
-					if duration < minRecordingDuration {
-						slog.Info("Recording too short, skipping",
-							"duration_s", fmt.Sprintf("%.1f", duration),
-							"min_s", minRecordingDuration)
-						continue
-					}
-
-					if duration > maxRecordingDuration {
-						slog.Warn("Recording exceeds max duration, truncating",
-							"duration_s", fmt.Sprintf("%.1f", duration),
-							"max_s", maxRecordingDuration)
-						maxSamples := int(maxRecordingDuration * float64(cfg.Audio.SampleRate))
-						samples = samples[:maxSamples]
-						duration = maxRecordingDuration
-					}
-
-					slog.Info("Captured audio, transcribing...",
-						"duration_s", fmt.Sprintf("%.1f", duration))
-
-					// Async transcription and injection
-					go func(samples []float32) {
-						start := time.Now()
-						text, err := transcriber.Process(samples)
-						if err != nil {
-							slog.Error("Transcription failed", "error", err)
-							return
+						// LLM rewrite: backspace raw text and replace with rewritten
+						if rewriter != nil {
+							finalText := streamer.FinalText()
+							if finalText != "" {
+								localInjector := injector.(*inject.Injector)
+								go func() {
+									rewriting.Store(true)
+									defer rewriting.Store(false)
+									rewritten, rwErr := rewriter.Rewrite(context.Background(), finalText)
+									if rwErr != nil {
+										slog.Warn("LLM rewrite failed, keeping raw text", "error", rwErr)
+										return
+									}
+									// Backspace all raw text and type rewritten version
+									if err := localInjector.InjectDelta(len([]rune(finalText)), rewritten); err != nil {
+										slog.Error("Rewrite injection failed", "error", err)
+									}
+								}()
+							}
+						}
+					} else {
+						// Batch mode: stop recording, transcribe all audio, inject
+						samples := recorder.Stop()
+						if samples == nil {
+							continue
 						}
 
-						elapsed := time.Since(start).Round(time.Millisecond)
+						duration := float64(len(samples)) / float64(cfg.Audio.SampleRate)
 
-						if text == "" {
-							slog.Info("No speech detected", "elapsed", elapsed)
-							return
+						if duration < minRecordingDuration {
+							slog.Info("Recording too short, skipping",
+								"duration_s", fmt.Sprintf("%.1f", duration),
+								"min_s", minRecordingDuration)
+							continue
 						}
 
-						slog.Info("Transcribed", "elapsed", elapsed, "text", text)
-
-						if err := injector.Inject(text); err != nil {
-							slog.Error("Text injection failed", "error", err)
-							return
+						if duration > maxRecordingDuration {
+							slog.Warn("Recording exceeds max duration, truncating",
+								"duration_s", fmt.Sprintf("%.1f", duration),
+								"max_s", maxRecordingDuration)
+							maxSamples := int(maxRecordingDuration * float64(cfg.Audio.SampleRate))
+							samples = samples[:maxSamples]
+							duration = maxRecordingDuration
 						}
 
-						slog.Info("Text injected")
-					}(samples)
+						slog.Info("Captured audio, transcribing...",
+							"duration_s", fmt.Sprintf("%.1f", duration))
+
+						// Async transcription and injection
+						go func(samples []float32) {
+							start := time.Now()
+							text, err := transcriber.Process(samples)
+							if err != nil {
+								slog.Error("Transcription failed", "error", err)
+								return
+							}
+
+							elapsed := time.Since(start).Round(time.Millisecond)
+
+							if text == "" {
+								slog.Info("No speech detected", "elapsed", elapsed)
+								return
+							}
+
+							slog.Info("Transcribed", "elapsed", elapsed, "text", text)
+
+							if rewriter != nil {
+								rewriting.Store(true)
+								rewritten, rwErr := rewriter.Rewrite(context.Background(), text)
+								rewriting.Store(false)
+								if rwErr != nil {
+									slog.Warn("LLM rewrite failed, using raw transcription", "error", rwErr)
+								} else {
+									text = rewritten
+								}
+							}
+
+							if err := injector.Inject(text); err != nil {
+								slog.Error("Text injection failed", "error", err)
+								return
+							}
+
+							slog.Info("Text injected")
+						}(samples)
+					}
 				}
 
 			case sig := <-sigCh:
 				slog.Info("Shutting down...", "signal", sig)
+				// Stop streaming if active
+				if streamer != nil && recorder.IsRecording() {
+					streamer.Stop()
+				}
 				// Stop recording if active
 				if recorder.IsRecording() {
 					recorder.Stop()
@@ -309,6 +398,13 @@ func printBanner(cfg *config.Config) {
 	fmt.Printf("  Hotkey:  %s (%s mode)\n", strings.Join(cfg.Hotkey.Keys, "+"), cfg.Hotkey.Mode)
 	fmt.Printf("  Audio:   %dHz, %dch\n", cfg.Audio.SampleRate, cfg.Audio.Channels)
 	fmt.Printf("  Inject:  %s\n", cfg.Inject.Method)
+	if cfg.Transcribe.Streaming.Enabled {
+		fmt.Printf("  Stream:  on (step=%dms, window=%dms)\n",
+			cfg.Transcribe.Streaming.StepMs, cfg.Transcribe.Streaming.LengthMs)
+	}
+	if cfg.Rewrite.Enabled {
+		fmt.Printf("  Rewrite: on (model=%s)\n", cfg.Rewrite.Model)
+	}
 	fmt.Printf("  Log:     %s\n", cfg.LogLevel)
 	fmt.Println("====================")
 }
