@@ -200,6 +200,10 @@ See [`config.example.yaml`](config.example.yaml) for all options with documentat
 | `inject.method`                 | `type`                    | `type` = keystrokes, `paste` = clipboard + Cmd+V, `ble` = ESP32 BLE |
 | `inject.ble.device_mac`         |                           | Paired ESP32-S3 device MAC (set by `task ble-pair`)   |
 | `inject.ble.shared_secret`      |                           | Hex-encoded encryption key (set by `task ble-pair`)   |
+| `rewrite.enabled`               | `false`                   | Send transcribed text to local Ollama LLM before injection |
+| `rewrite.model`                 |                           | Ollama model name (e.g. `llama3.2`)                   |
+| `rewrite.prompt`                |                           | System prompt controlling rewrite style               |
+| `rewrite.timeout_secs`          | `10`                      | Per-request timeout (increase for cold starts)        |
 | `log_level`                     | `info`                    | `debug`, `info`, `warn`, or `error`                   |
 
 ## How It Works
@@ -207,7 +211,8 @@ See [`config.example.yaml`](config.example.yaml) for all options with documentat
 1. A global hotkey listener waits for your configured key combo
 2. On press, audio is captured from your default microphone at 16kHz mono
 3. On release, the audio is sent for local transcription (Metal-accelerated whisper or CoreML Neural Engine Parakeet)
-4. The transcribed text is injected into the active application via keystroke simulation
+4. Optionally, the transcribed text is sent to a local [Ollama](https://ollama.com) LLM for rewriting (grammar cleanup, style transformation, etc.)
+5. The final text is injected into the active application via keystroke simulation
 
 Transcription happens asynchronously -- you can start speaking again while the previous result is being typed.
 
@@ -217,7 +222,7 @@ gostt-writer is designed to be fully offline. After installation, the applicatio
 
 ### What we guarantee
 
-- **No internet access at runtime.** The application does not import Go's `net/http` or any networking package. There are no outbound connections, no DNS lookups, no listening sockets.
+- **No internet access at runtime.** The application makes no outbound internet connections. The only runtime networking is the optional LLM rewrite feature, which connects to a local Ollama instance on `localhost` (disabled by default).
 - **No telemetry or analytics.** No usage data, crash reports, or diagnostics are collected or transmitted.
 - **Audio stays in memory.** Captured audio is held in RAM only, processed locally, and discarded. It is never written to disk or sent anywhere.
 - **Minimal filesystem footprint.** The app reads its config from `~/.config/gostt-writer/config.yaml` and its models from the configured model directory. It writes only to the config directory (to create a default config on first run). Nothing else.
@@ -236,19 +241,19 @@ When configured with `inject.method: ble`, gostt-writer sends transcribed text o
 
 ### When the network is used
 
-The **only** network access occurs during setup, when you explicitly download models:
+Network access occurs in two scenarios, both user-initiated:
 
-- `task models` downloads whisper and/or Parakeet models from [HuggingFace](https://huggingface.co)
-- This is manual and user-initiated -- it never happens automatically
+- **Model downloads** -- `task models` downloads whisper and/or Parakeet models from [HuggingFace](https://huggingface.co). This is manual and one-time.
+- **LLM rewrite** (optional) -- when `rewrite.enabled: true`, transcribed text is sent to a local [Ollama](https://ollama.com) instance on `localhost`. This is a **loopback connection** -- no data leaves your machine. Ollama itself runs fully on-device.
 
-After models are downloaded, you can run gostt-writer with no internet connection. BLE output (if configured) uses local radio only.
+After models are downloaded (and with rewrite disabled or Ollama running locally), gostt-writer functions with no internet connection. BLE output (if configured) uses local radio only.
 
 ### Verifying this yourself
 
 You can confirm the offline guarantee:
 
 - **Block the binary with your firewall** (Little Snitch, Lulu, or macOS Application Firewall) -- gostt-writer will function identically with all network access blocked.
-- **Search the source code** -- `grep -r 'net/http\|net.Dial\|http.Get\|http.Post' internal/ cmd/` returns zero results in application code.
+- **Search the source code** -- `net/http` is used only in `internal/rewrite` (localhost Ollama) and `internal/models` (model downloads). No other package makes network calls.
 - **Monitor with `nettop`** -- run `nettop -p $(pgrep gostt-writer)` while using the app. You will see zero internet activity.
 
 ### One caveat: macOS system-level telemetry
@@ -283,6 +288,39 @@ To use Parakeet:
    transcribe:
      backend: parakeet
    ```
+
+## LLM Rewrite (optional)
+
+gostt-writer can optionally send transcribed text through a local [Ollama](https://ollama.com) LLM before injection. This cleans up dictation artifacts (filler words, grammar, punctuation) or transforms the text style entirely -- all on-device.
+
+### Setup
+
+```bash
+task ollama-setup       # Install Ollama, pull model, verify
+```
+
+Then enable in your config (`~/.config/gostt-writer/config.yaml`):
+
+```yaml
+rewrite:
+  enabled: true
+  model: "llama3.2"
+  prompt: "Clean up this dictated text. Fix grammar, remove filler words. Output only the cleaned text."
+```
+
+### How it works
+
+- **Batch mode**: transcription completes, LLM rewrites it, then the final text is injected
+- **Streaming mode**: raw text appears live as you speak; after you stop, the LLM rewrites it and the raw text is replaced with the polished version
+- **Graceful degradation**: if Ollama is down or slow, the raw transcription is used and a warning is logged
+
+### Health check
+
+```bash
+task ollama-check       # Verify Ollama running + model pulled + config enabled
+```
+
+> **Tip:** The first request after starting Ollama can take 10-30 seconds while the model loads into memory. Set `rewrite.timeout_secs: 30` if you experience timeouts on cold starts.
 
 ## ESP32-S3 Firmware
 
@@ -336,9 +374,12 @@ Run `task --list` to see all available tasks:
 | `task install`      | Build, download models, and install to /usr/local/bin    |
 | `task models`       | Download transcription models (interactive)              |
 | `task backend`      | Switch the active transcription backend in your config   |
+| `task config`       | Interactive configuration editor (all settings)          |
 | `task build`        | Build the gostt-writer binary                            |
 | `task run`          | Build and run gostt-writer                               |
 | `task test`         | Run all tests                                            |
+| `task ollama-setup` | Install Ollama and pull the model for LLM rewriting      |
+| `task ollama-check` | Verify Ollama is running and model is available           |
 | `task ble-pair`     | Pair with an ESP32-S3 running GOSTT-KBD firmware         |
 | `task ble-setup`    | Full guided BLE setup (toolchain, build, flash, pair)    |
 | `task fw-build`     | Build ESP32-S3 firmware                                  |

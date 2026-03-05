@@ -111,6 +111,595 @@ tasks:
         esac
     interactive: true
 
+  config:
+    desc: Interactive configuration editor
+    vars:
+      CONFIG_PATH:
+        sh: echo "${HOME}/.config/gostt-writer/config.yaml"
+    cmds:
+      - |
+        CONFIG="{{.CONFIG_PATH}}"
+
+        if [ ! -f "$CONFIG" ]; then
+          echo "Config not found at $CONFIG"
+          echo "Run gostt-writer once to generate the default config, or create it manually."
+          exit 1
+        fi
+
+        # --- YAML readers ---
+        # Read a value from within a top-level section (e.g., read_val hotkey mode)
+        read_val() {
+          awk -v section="$1" -v key="$2" '
+            $0 ~ "^" section ":" { found=1; next }
+            found && /^[^ \t#]/ { exit }
+            found {
+              line=$0; sub(/^[[:space:]]+/, "", line)
+              if (line ~ "^" key ":") {
+                sub(/^[^:]*:[[:space:]]*/, "", line)
+                gsub(/["\x27]/, "", line)
+                sub(/[[:space:]]*#.*/, "", line)
+                sub(/[[:space:]]*$/, "", line)
+                print line; exit
+              }
+            }
+          ' "$CONFIG"
+        }
+
+        # Read a top-level key (e.g., read_top log_level)
+        read_top() {
+          awk -v key="$1" '
+            $0 ~ "^" key ":" {
+              line=$0; sub(/^[^:]*:[[:space:]]*/, "", line)
+              gsub(/["\x27]/, "", line)
+              sub(/[[:space:]]*#.*/, "", line)
+              sub(/[[:space:]]*$/, "", line)
+              print line; exit
+            }
+          ' "$CONFIG"
+        }
+
+        # Read a nested value (e.g., read_nested transcribe streaming enabled)
+        read_nested() {
+          awk -v s1="$1" -v s2="$2" -v key="$3" '
+            $0 ~ "^" s1 ":" { f1=1; next }
+            f1 && /^[^ \t#]/ { exit }
+            f1 {
+              line=$0; sub(/^[[:space:]]+/, "", line)
+              if (line ~ "^" s2 ":") { f2=1; next }
+            }
+            f2 {
+              line=$0; sub(/^[[:space:]]+/, "", line)
+              if (line ~ "^" key ":") {
+                sub(/^[^:]*:[[:space:]]*/, "", line)
+                gsub(/["\x27]/, "", line)
+                sub(/[[:space:]]*$/, "", line)
+                print line; exit
+              }
+              if (line ~ "^[^ \t#]") exit
+            }
+          ' "$CONFIG"
+        }
+
+        # Read hotkey keys as "key1+key2+key3"
+        read_keys() {
+          awk '
+            /^hotkey:/ { found=1; next }
+            found && /^[^ \t#]/ { exit }
+            found && /keys:.*\[/ {
+              val=$0; sub(/.*\[/, "", val); sub(/\].*/, "", val)
+              gsub(/["\x27,[:space:]]/, " ", val)
+              n=split(val, a)
+              for(i=1;i<=n;i++) printf "%s%s", (i>1?"+":""), a[i]
+              print ""; exit
+            }
+            found && /keys:/ { inkeys=1; next }
+            inkeys && /^[[:space:]]*-[[:space:]]/ {
+              line=$0; sub(/.*-[[:space:]]*/, "", line)
+              gsub(/["\x27]/, "", line); sub(/[[:space:]]*$/, "", line)
+              result = result (result==""?"":"+") line
+            }
+            inkeys && /^[[:space:]]*#/ { next }
+            inkeys && !/^[[:space:]]*-/ && !/^[[:space:]]*$/ && !/^[[:space:]]*#/ {
+              print result; done=1; exit
+            }
+            END { if(!done && result!="") print result }
+          ' "$CONFIG"
+        }
+
+        # --- YAML writers ---
+        # Update a value within a section by finding the exact line
+        set_val() {
+          SECTION="$1"; KEY="$2"; NEWVAL="$3"
+          LN=$(awk -v section="$SECTION" -v key="$KEY" '
+            $0 ~ "^" section ":" { found=1; next }
+            found && /^[^ \t#]/ { exit }
+            found { line=$0; sub(/^[[:space:]]+/,"",line); if(line ~ "^" key ":") { print NR; exit } }
+          ' "$CONFIG")
+          if [ -n "$LN" ]; then
+            sed -i.bak "${LN}s|${KEY}:.*|${KEY}: ${NEWVAL}|" "$CONFIG" && rm -f "$CONFIG.bak"
+          else
+            # Key missing — add it to the section
+            SECLINE=$(awk -v section="$SECTION" '$0 ~ "^" section ":" { print NR; exit }' "$CONFIG")
+            if [ -z "$SECLINE" ]; then
+              printf "\n%s:\n  %s: %s\n" "$SECTION" "$KEY" "$NEWVAL" >> "$CONFIG"
+            else
+              sed -i.bak "${SECLINE}a\\
+          ${KEY}: ${NEWVAL}" "$CONFIG" && rm -f "$CONFIG.bak"
+            fi
+          fi
+        }
+
+        # Update a top-level key
+        set_top() {
+          KEY="$1"; NEWVAL="$2"
+          LN=$(awk -v key="$KEY" '$0 ~ "^" key ":" { print NR; exit }' "$CONFIG")
+          if [ -n "$LN" ]; then
+            sed -i.bak "${LN}s|${KEY}:.*|${KEY}: ${NEWVAL}|" "$CONFIG" && rm -f "$CONFIG.bak"
+          else
+            printf "\n%s: %s\n" "$KEY" "$NEWVAL" >> "$CONFIG"
+          fi
+        }
+
+        # Update a nested value (e.g., set_nested transcribe streaming enabled true)
+        set_nested() {
+          S1="$1"; S2="$2"; KEY="$3"; NEWVAL="$4"
+          LN=$(awk -v s1="$S1" -v s2="$S2" -v key="$KEY" '
+            $0 ~ "^" s1 ":" { f1=1; next }
+            f1 && /^[^ \t#]/ { exit }
+            f1 { line=$0; sub(/^[[:space:]]+/,"",line); if(line ~ "^" s2 ":") { f2=1; next } }
+            f2 { line=$0; sub(/^[[:space:]]+/,"",line); if(line ~ "^" key ":") { print NR; exit } }
+          ' "$CONFIG")
+          if [ -n "$LN" ]; then
+            sed -i.bak "${LN}s|${KEY}:.*|${KEY}: ${NEWVAL}|" "$CONFIG" && rm -f "$CONFIG.bak"
+          else
+            # Subsection or key missing — add it
+            S2LINE=$(awk -v s1="$S1" -v s2="$S2" '
+              $0 ~ "^" s1 ":" { f1=1; next }
+              f1 && /^[^ \t#]/ { exit }
+              f1 { line=$0; sub(/^[[:space:]]+/,"",line); if(line ~ "^" s2 ":") { print NR; exit } }
+            ' "$CONFIG")
+            if [ -n "$S2LINE" ]; then
+              sed -i.bak "${S2LINE}a\\
+            ${KEY}: ${NEWVAL}" "$CONFIG" && rm -f "$CONFIG.bak"
+            else
+              # Add subsection under parent — insert at end of parent section
+              S1END=$(awk -v s1="$S1" '
+                $0 ~ "^" s1 ":" { f=1; last=NR; next }
+                f && /^[^ \t#]/ { print last; exit }
+                f && /^[[:space:]]/ { last=NR }
+                END { if(f) print last }
+              ' "$CONFIG")
+              if [ -z "$S1END" ]; then
+                printf "\n%s:\n  %s:\n    %s: %s\n" "$S1" "$S2" "$KEY" "$NEWVAL" >> "$CONFIG"
+              else
+                sed -i.bak "${S1END}a\\
+          ${S2}:\\
+            ${KEY}: ${NEWVAL}" "$CONFIG" && rm -f "$CONFIG.bak"
+              fi
+            fi
+          fi
+        }
+
+        # Replace hotkey keys using awk rewrite (handles both inline and multi-line)
+        set_keys() {
+          NEWKEYS="$1"
+          TMP="${CONFIG}.tmp"
+          awk -v keys="$NEWKEYS" '
+            BEGIN { n=split(keys, arr, "+") }
+            /^hotkey:/ { in_h=1; print; next }
+            in_h && /^[^ \t#]/ { in_h=0 }
+            in_h {
+              line=$0; sub(/^[[:space:]]+/, "", line)
+              if (line ~ "^keys:") {
+                match($0, /^[[:space:]]+/)
+                ind = substr($0, RSTART, RLENGTH)
+                printf "%skeys:\n", ind
+                for(i=1; i<=n; i++) printf "%s    - %s\n", ind, arr[i]
+                if ($0 ~ /\[/) next
+                skip=1; next
+              }
+            }
+            skip && /^[[:space:]]+(- |#)/ { next }
+            skip && /^[[:space:]]*$/ { next }
+            skip { skip=0 }
+            { print }
+          ' "$CONFIG" > "$TMP" && mv "$TMP" "$CONFIG"
+        }
+
+        # Replace rewrite prompt using awk rewrite (safe for special chars)
+        set_prompt() {
+          NEWPROMPT="$1"
+          TMP="${CONFIG}.tmp"
+          awk -v prompt="$NEWPROMPT" '
+            /^rewrite:/ { in_r=1; print; next }
+            in_r && /^[^ \t#]/ { in_r=0 }
+            in_r {
+              line=$0; sub(/^[[:space:]]+/, "", line)
+              if (line ~ "^prompt:") {
+                match($0, /^[[:space:]]+/)
+                ind = substr($0, RSTART, RLENGTH)
+                gsub(/"/, "\\\"", prompt)
+                print ind "prompt: \"" prompt "\""
+                next
+              }
+            }
+            { print }
+          ' "$CONFIG" > "$TMP" && mv "$TMP" "$CONFIG"
+        }
+
+        # --- Summary ---
+        show_summary() {
+          BACKEND=$(read_val "transcribe" "backend")
+          BACKEND="${BACKEND:-whisper}"
+          KEYS=$(read_keys)
+          KEYS="${KEYS:-ctrl+shift+r}"
+          MODE=$(read_val "hotkey" "mode")
+          MODE="${MODE:-hold}"
+          METHOD=$(read_val "inject" "method")
+          METHOD="${METHOD:-type}"
+          RW_ON=$(read_val "rewrite" "enabled")
+          RW_MODEL=$(read_val "rewrite" "model")
+          STREAM=$(read_nested "transcribe" "streaming" "enabled")
+          LOGLVL=$(read_top "log_level")
+          LOGLVL="${LOGLVL:-info}"
+
+          echo ""
+          echo "=== gostt-writer configuration ==="
+          echo "  Backend:   $BACKEND"
+          echo "  Hotkey:    $KEYS ($MODE mode)"
+          echo "  Inject:    $METHOD"
+          if [ "$RW_ON" = "true" ]; then
+            echo "  Rewrite:   on ($RW_MODEL)"
+          else
+            echo "  Rewrite:   off"
+          fi
+          if [ "$STREAM" = "true" ]; then
+            echo "  Streaming: on"
+          else
+            echo "  Streaming: off"
+          fi
+          echo "  Log level: $LOGLVL"
+          echo ""
+          echo "  Config: $CONFIG"
+          echo ""
+        }
+
+        # --- Sub-menus ---
+        menu_backend() {
+          CURRENT=$(read_val "transcribe" "backend")
+          CURRENT="${CURRENT:-whisper}"
+          echo ""
+          echo "Current backend: $CURRENT"
+          echo "  [1] whisper  — CPU/GPU via Metal"
+          echo "  [2] parakeet — Apple Neural Engine via CoreML"
+          printf "Choose [1/2]: "
+          read -r choice
+          case "$choice" in
+            1) NEW="whisper" ;;
+            2) NEW="parakeet" ;;
+            *) echo "Invalid choice."; return ;;
+          esac
+          if [ "$NEW" = "$CURRENT" ]; then
+            echo "Already using $NEW."
+            return
+          fi
+          set_val "transcribe" "backend" "$NEW"
+          # Warn about incompatibilities
+          STREAM=$(read_nested "transcribe" "streaming" "enabled")
+          if [ "$NEW" = "parakeet" ] && [ "$STREAM" = "true" ]; then
+            echo "Warning: streaming is not supported with parakeet. Disabling streaming."
+            set_nested "transcribe" "streaming" "enabled" "false"
+          fi
+          echo "Backend changed to $NEW."
+        }
+
+        menu_hotkey() {
+          KEYS=$(read_keys)
+          KEYS="${KEYS:-ctrl+shift+r}"
+          MODE=$(read_val "hotkey" "mode")
+          MODE="${MODE:-hold}"
+          echo ""
+          echo "Current hotkey: $KEYS ($MODE mode)"
+          echo ""
+          echo "Mode:"
+          echo "  [1] hold   — push-to-talk (hold key to record)"
+          echo "  [2] toggle — press once to start, again to stop"
+          printf "Choose [1/2] (enter to keep $MODE): "
+          read -r mchoice
+          case "$mchoice" in
+            1) set_val "hotkey" "mode" "hold"; echo "Mode set to hold." ;;
+            2) set_val "hotkey" "mode" "toggle"; echo "Mode set to toggle." ;;
+            "") ;;
+            *) echo "Invalid choice." ;;
+          esac
+          echo ""
+          echo "Key combination:"
+          echo "  [1] ctrl+shift+r"
+          echo "  [2] ctrl+shift+d"
+          echo "  [3] ctrl+shift+space"
+          echo "  [4] alt+shift+r"
+          echo "  [5] space"
+          echo "  [6] Custom"
+          printf "Choose [1-6] (enter to keep $KEYS): "
+          read -r kchoice
+          case "$kchoice" in
+            1) set_keys "ctrl+shift+r"; echo "Keys set to ctrl+shift+r." ;;
+            2) set_keys "ctrl+shift+d"; echo "Keys set to ctrl+shift+d." ;;
+            3) set_keys "ctrl+shift+space"; echo "Keys set to ctrl+shift+space." ;;
+            4) set_keys "alt+shift+r"; echo "Keys set to alt+shift+r." ;;
+            5) set_keys "space"; echo "Keys set to space." ;;
+            6)
+              printf "Enter keys separated by + (e.g., ctrl+alt+d): "
+              read -r custom
+              if [ -n "$custom" ]; then
+                set_keys "$custom"
+                echo "Keys set to $custom."
+              fi
+              ;;
+            "") ;;
+            *) echo "Invalid choice." ;;
+          esac
+        }
+
+        menu_inject() {
+          CURRENT=$(read_val "inject" "method")
+          CURRENT="${CURRENT:-type}"
+          echo ""
+          echo "Current injection method: $CURRENT"
+          echo "  [1] type  — keystroke simulation (preserves clipboard)"
+          echo "  [2] paste — clipboard + Cmd+V (faster, overwrites clipboard)"
+          echo "  [3] ble   — Bluetooth to ESP32-S3 (requires pairing)"
+          printf "Choose [1-3]: "
+          read -r choice
+          case "$choice" in
+            1) NEW="type" ;;
+            2) NEW="paste" ;;
+            3)
+              MAC=$(read_val "inject" "device_mac")
+              if [ -z "$MAC" ]; then
+                # Check nested under ble
+                MAC=$(awk '
+                  /^inject:/ { f=1; next }
+                  f && /^[^ \t#]/ { exit }
+                  f && /ble:/ { fb=1; next }
+                  fb && /device_mac:/ { sub(/.*:[[:space:]]*/, ""); gsub(/["\x27]/, ""); sub(/[[:space:]]*$/,""); print; exit }
+                ' "$CONFIG")
+              fi
+              if [ -z "$MAC" ]; then
+                echo "No paired BLE device found. Run 'task ble-pair' first."
+                return
+              fi
+              NEW="ble"
+              ;;
+            *) echo "Invalid choice."; return ;;
+          esac
+          if [ "$NEW" = "$CURRENT" ]; then
+            echo "Already using $NEW."
+            return
+          fi
+          STREAM=$(read_nested "transcribe" "streaming" "enabled")
+          if [ "$NEW" = "ble" ] && [ "$STREAM" = "true" ]; then
+            echo "Warning: streaming is not supported with BLE. Disabling streaming."
+            set_nested "transcribe" "streaming" "enabled" "false"
+          fi
+          set_val "inject" "method" "$NEW"
+          echo "Injection method changed to $NEW."
+        }
+
+        menu_rewrite() {
+          RW_ON=$(read_val "rewrite" "enabled")
+          RW_MODEL=$(read_val "rewrite" "model")
+          echo ""
+          if [ "$RW_ON" = "true" ]; then
+            RW_PROMPT=$(read_val "rewrite" "prompt")
+            echo "LLM Rewrite: on (model=$RW_MODEL)"
+            echo ""
+            echo "  [1] Turn off"
+            echo "  [2] Change model (current: $RW_MODEL)"
+            echo "  [3] Change prompt"
+            echo "  [b] Back"
+            printf "Choose: "
+            read -r choice
+            case "$choice" in
+              1)
+                set_val "rewrite" "enabled" "false"
+                echo "Rewrite disabled."
+                ;;
+              2)
+                printf "Enter model name (e.g., llama3.2, mistral, gemma3:4b): "
+                read -r newmodel
+                if [ -n "$newmodel" ]; then
+                  set_val "rewrite" "model" "\"$newmodel\""
+                  echo "Model changed to $newmodel."
+                  echo "Run 'task ollama-setup' if you haven't pulled this model yet."
+                fi
+                ;;
+              3)
+                echo ""
+                echo "Prompt presets:"
+                echo "  [1] Clean dictation — fix grammar, remove filler words"
+                echo "  [2] Concise technical — clean up, make concise and technical"
+                echo "  [3] Professional email — polish into professional prose"
+                echo "  [4] Minimal cleanup — only fix obvious errors"
+                echo "  [5] Custom"
+                printf "Choose [1-5]: "
+                read -r pchoice
+                case "$pchoice" in
+                  1) set_prompt "Clean up this dictated text. Fix grammar, remove filler words. Output only the cleaned text, nothing else." ;;
+                  2) set_prompt "Clean up this dictated text. Fix grammar, remove filler words, and make it concise and technical. Output only the cleaned text, nothing else." ;;
+                  3) set_prompt "Rewrite this dictated text as professional, well-structured prose suitable for email or documentation. Output only the rewritten text, nothing else." ;;
+                  4) set_prompt "Fix any obvious grammar or spelling errors in this dictated text. Keep the tone and style as-is. Output only the corrected text, nothing else." ;;
+                  5)
+                    printf "Enter your prompt: "
+                    read -r custom
+                    if [ -n "$custom" ]; then
+                      set_prompt "$custom"
+                    fi
+                    ;;
+                  *) echo "Invalid choice." ;;
+                esac
+                if [ -n "$pchoice" ] && [ "$pchoice" != "5" ]; then
+                  echo "Prompt updated."
+                fi
+                ;;
+              b|B) return ;;
+              *) echo "Invalid choice." ;;
+            esac
+          else
+            echo "LLM Rewrite: off"
+            echo ""
+            echo "  [1] Turn on"
+            echo "  [b] Back"
+            printf "Choose: "
+            read -r choice
+            case "$choice" in
+              1)
+                printf "Model name (default: llama3.2): "
+                read -r newmodel
+                newmodel="${newmodel:-llama3.2}"
+                echo ""
+                echo "Prompt presets:"
+                echo "  [1] Clean dictation — fix grammar, remove filler words"
+                echo "  [2] Concise technical — clean up, make concise and technical"
+                echo "  [3] Professional email — polish into professional prose"
+                echo "  [4] Minimal cleanup — only fix obvious errors"
+                echo "  [5] Custom"
+                printf "Choose [1-5] (default: 1): "
+                read -r pchoice
+                pchoice="${pchoice:-1}"
+                case "$pchoice" in
+                  1) PROMPT="Clean up this dictated text. Fix grammar, remove filler words. Output only the cleaned text, nothing else." ;;
+                  2) PROMPT="Clean up this dictated text. Fix grammar, remove filler words, and make it concise and technical. Output only the cleaned text, nothing else." ;;
+                  3) PROMPT="Rewrite this dictated text as professional, well-structured prose suitable for email or documentation. Output only the rewritten text, nothing else." ;;
+                  4) PROMPT="Fix any obvious grammar or spelling errors in this dictated text. Keep the tone and style as-is. Output only the corrected text, nothing else." ;;
+                  5)
+                    printf "Enter your prompt: "
+                    read -r PROMPT
+                    ;;
+                  *) echo "Invalid choice."; return ;;
+                esac
+                # Check if rewrite section exists
+                if grep -q "^rewrite:" "$CONFIG"; then
+                  set_val "rewrite" "enabled" "true"
+                  set_val "rewrite" "model" "\"$newmodel\""
+                  set_prompt "$PROMPT"
+                else
+                  # Add entire section
+                  ESCAPED=$(printf '%s' "$PROMPT" | sed 's/"/\\"/g')
+                  printf '\nrewrite:\n  enabled: true\n  ollama_url: "http://localhost:11434"\n  model: "%s"\n  prompt: "%s"\n  timeout_secs: 30\n' "$newmodel" "$ESCAPED" >> "$CONFIG"
+                fi
+                echo "Rewrite enabled with model=$newmodel."
+                echo "Run 'task ollama-setup' to install Ollama and pull the model."
+                ;;
+              b|B) return ;;
+              *) echo "Invalid choice." ;;
+            esac
+          fi
+        }
+
+        menu_streaming() {
+          STREAM=$(read_nested "transcribe" "streaming" "enabled")
+          BACKEND=$(read_val "transcribe" "backend")
+          BACKEND="${BACKEND:-whisper}"
+          METHOD=$(read_val "inject" "method")
+          METHOD="${METHOD:-type}"
+          echo ""
+          if [ "$STREAM" = "true" ]; then
+            STEP=$(read_nested "transcribe" "streaming" "step_ms")
+            LEN=$(read_nested "transcribe" "streaming" "length_ms")
+            echo "Streaming: on (step=${STEP}ms, window=${LEN}ms)"
+          else
+            echo "Streaming: off"
+          fi
+          echo ""
+          if [ "$STREAM" = "true" ]; then
+            echo "  [1] Turn off"
+            echo "  [b] Back"
+            printf "Choose: "
+            read -r choice
+            case "$choice" in
+              1) set_nested "transcribe" "streaming" "enabled" "false"; echo "Streaming disabled." ;;
+              b|B) return ;;
+              *) echo "Invalid choice." ;;
+            esac
+          else
+            echo "  [1] Turn on"
+            echo "  [b] Back"
+            printf "Choose: "
+            read -r choice
+            case "$choice" in
+              1)
+                if [ "$BACKEND" = "parakeet" ]; then
+                  echo "Streaming is not supported with the parakeet backend."
+                  return
+                fi
+                if [ "$METHOD" = "ble" ]; then
+                  echo "Streaming is not supported with BLE injection."
+                  return
+                fi
+                set_nested "transcribe" "streaming" "enabled" "true"
+                echo "Streaming enabled (step=3000ms, window=10000ms)."
+                ;;
+              b|B) return ;;
+              *) echo "Invalid choice." ;;
+            esac
+          fi
+        }
+
+        menu_loglevel() {
+          CURRENT=$(read_top "log_level")
+          CURRENT="${CURRENT:-info}"
+          echo ""
+          echo "Current log level: $CURRENT"
+          echo "  [1] debug"
+          echo "  [2] info"
+          echo "  [3] warn"
+          echo "  [4] error"
+          printf "Choose [1-4]: "
+          read -r choice
+          case "$choice" in
+            1) NEW="debug" ;;
+            2) NEW="info" ;;
+            3) NEW="warn" ;;
+            4) NEW="error" ;;
+            *) echo "Invalid choice."; return ;;
+          esac
+          if [ "$NEW" = "$CURRENT" ]; then
+            echo "Already set to $NEW."
+            return
+          fi
+          set_top "log_level" "$NEW"
+          echo "Log level changed to $NEW."
+        }
+
+        # --- Main loop ---
+        while true; do
+          show_summary
+          echo "What would you like to change?"
+          echo "  [1] Backend"
+          echo "  [2] Hotkey"
+          echo "  [3] Injection method"
+          echo "  [4] LLM rewrite"
+          echo "  [5] Streaming"
+          echo "  [6] Log level"
+          echo "  [q] Done"
+          echo ""
+          printf "Choose: "
+          read -r choice
+
+          case "$choice" in
+            1) menu_backend ;;
+            2) menu_hotkey ;;
+            3) menu_inject ;;
+            4) menu_rewrite ;;
+            5) menu_streaming ;;
+            6) menu_loglevel ;;
+            q|Q|"") echo ""; echo "Restart gostt-writer for changes to take effect."; break ;;
+            *) echo "Invalid choice." ;;
+          esac
+        done
+    interactive: true
+
   backend:
     desc: Switch the active transcription backend in your config
     vars:
@@ -262,6 +851,124 @@ tasks:
       - rm -rf {{.WHISPER_BUILD}}
       - go clean
       - echo "Cleaned build artifacts."
+
+  ollama-setup:
+    desc: Install Ollama and pull the model for LLM rewriting
+    vars:
+      CONFIG_PATH:
+        sh: echo "${HOME}/.config/gostt-writer/config.yaml"
+    cmds:
+      - |
+        # Check if Ollama is installed
+        if ! command -v ollama >/dev/null 2>&1; then
+          echo "Ollama is not installed."
+          echo ""
+          if command -v brew >/dev/null 2>&1; then
+            printf "Install via Homebrew? [y/N] "
+            read -r confirm
+            if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+              brew install ollama
+            else
+              echo "Install manually from https://ollama.com"
+              exit 1
+            fi
+          else
+            echo "Install from https://ollama.com and re-run this task."
+            exit 1
+          fi
+        fi
+        echo "Ollama is installed: $(ollama --version)"
+
+        # Determine model from config, default to llama3.2
+        MODEL="llama3.2"
+        if [ -f "{{.CONFIG_PATH}}" ]; then
+          CFG_MODEL=$(awk '/^rewrite:/{found=1} found && /model:/{gsub(/.*model:[[:space:]]*/, ""); gsub(/["\x27]/, ""); print; exit}' "{{.CONFIG_PATH}}")
+          if [ -n "$CFG_MODEL" ]; then
+            MODEL="$CFG_MODEL"
+          fi
+        fi
+
+        # Check if Ollama is running
+        if ! curl -s http://localhost:11434/api/version >/dev/null 2>&1; then
+          echo ""
+          echo "Ollama is not running. Start it with:"
+          echo "  ollama serve"
+          echo ""
+          echo "Or if installed via Homebrew:"
+          echo "  brew services start ollama"
+          echo ""
+          printf "Start Ollama now? [y/N] "
+          read -r confirm
+          if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+            ollama serve &
+            sleep 2
+          else
+            echo "Start Ollama manually, then re-run: task ollama-setup"
+            exit 1
+          fi
+        fi
+
+        echo ""
+        echo "Pulling model: $MODEL"
+        echo "This may take a few minutes on first download..."
+        ollama pull "$MODEL"
+        echo ""
+        echo "Model $MODEL is ready."
+        echo ""
+
+        # Quick smoke test
+        echo "Running smoke test..."
+        RESULT=$(curl -s http://localhost:11434/api/chat -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Say OK\"}],\"stream\":false}" | grep -o '"content":"[^"]*"' | head -1)
+        if [ -n "$RESULT" ]; then
+          echo "Smoke test passed — Ollama is responding."
+        else
+          echo "Warning: Ollama did not respond as expected. Check 'ollama serve' logs."
+        fi
+
+        echo ""
+        echo "=== LLM Rewrite Ready ==="
+        echo "Make sure your config has rewrite.enabled: true"
+        echo "Config: {{.CONFIG_PATH}}"
+    interactive: true
+
+  ollama-check:
+    desc: Verify Ollama is running and the configured model is available
+    vars:
+      CONFIG_PATH:
+        sh: echo "${HOME}/.config/gostt-writer/config.yaml"
+    cmds:
+      - |
+        MODEL="llama3.2"
+        if [ -f "{{.CONFIG_PATH}}" ]; then
+          CFG_MODEL=$(awk '/^rewrite:/{found=1} found && /model:/{gsub(/.*model:[[:space:]]*/, ""); gsub(/["\x27]/, ""); print; exit}' "{{.CONFIG_PATH}}")
+          if [ -n "$CFG_MODEL" ]; then
+            MODEL="$CFG_MODEL"
+          fi
+        fi
+
+        printf "Ollama:  "
+        if curl -s http://localhost:11434/api/version >/dev/null 2>&1; then
+          VER=$(curl -s http://localhost:11434/api/version | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
+          echo "running (v${VER})"
+        else
+          echo "NOT running — start with: ollama serve"
+          exit 1
+        fi
+
+        printf "Model:   "
+        if ollama list 2>/dev/null | grep -q "^${MODEL}"; then
+          echo "$MODEL (available)"
+        else
+          echo "$MODEL (NOT found — run: task ollama-setup)"
+          exit 1
+        fi
+
+        printf "Config:  "
+        if [ -f "{{.CONFIG_PATH}}" ] && grep -q 'enabled: true' "{{.CONFIG_PATH}}" 2>/dev/null; then
+          echo "rewrite enabled"
+        else
+          echo "rewrite NOT enabled in config"
+        fi
 
   ble-pair:
     desc: Pair with an ESP32-S3 running GOSTT-KBD firmware
