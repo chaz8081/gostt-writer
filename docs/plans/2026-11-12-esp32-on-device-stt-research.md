@@ -295,8 +295,15 @@ Caveats:
   five models is noise; the gap between them and Oído is not.
 - **Kroko was tested as released (float ONNX), not the 2/4-bit weights the
   P4 runs.** The P4 project reports that requantisation costs about half a
-  point of LibriSpeech WER (3.94 to 4.34 clean). The P4 engine itself was
-  not run.
+  point of LibriSpeech WER (3.94 to 4.34 clean). The P4 engine's host build
+  (`pieasr/host`, commit `68fcf81`) compiles on Linux and its three unit
+  tests pass, but it has **not been run on these clips**: the 2/4-bit
+  weights (`kroko-en-q24-v1.bin`, 26.7 MB) are published only on Hugging
+  Face and could not be downloaded in this session. To finish:
+  `python models/download.py`, convert each clip to raw float32 16 kHz, then
+  `build/host/transcribe models/kroko-en-q24-v1.bin int+beam4 clip.f32`.
+  The engine also supports phrase biasing (`PIEASR_PHRASES=<file>`), worth
+  testing with a list of technical terms.
 - Kroko needed about 2 s of trailing silence before it emitted the last
   word; with 0.8 s the final word was cut off. This is consistent with the
   roughly 2 s word latency the P4 project reports, and matters for a
