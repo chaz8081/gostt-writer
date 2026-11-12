@@ -1,7 +1,8 @@
 # On-device speech-to-text on the ESP32-S3: model survey
 
 Date: 2026-11-12
-Status: research only. Nothing here has been built or run on hardware yet.
+Status: research plus a host-side run of Oído (see "Host evaluation"). Nothing
+has been run on hardware yet.
 
 ## Question
 
@@ -67,8 +68,8 @@ Read directly from `lokutor-ai/oido` at commit `8c3d78e` (11 Nov 2026).
   audio fed at speaking pace. The firmware's end-of-speech detector adds
   0.8 s of silence by default (`CONFIG_TASR_SEG_HANG_MS`), so in practice
   about 1.1–1.3 s. That wait is tunable.
-- 0.64 s chunks instead of 0.32 s improve variant A to 6.0 / 14.0 WER at RTF
-  0.61, with ~660 ms final-text delay. Likely the best dictation setting.
+- The figures above use 0.64 s chunks. 1.28 s chunks improve variant A to
+  6.0 / 14.0 WER at RTF 0.61, with ~660 ms final-text delay.
 - The board and host builds print identical transcripts on 18 of 18 clips, so
   the engine can be developed and tested on a laptop.
 - The engine API is small and fits our firmware style: `tasr_model_load`,
@@ -151,10 +152,10 @@ A standalone device changes the architecture more than the model does:
 
 ## Recommended next steps
 
-1. **Host evaluation.** Build Oído's host CLI and run variants A and B
-   against the same recordings used for this repo's whisper/parakeet
-   benchmarks, at 0.32 s and 0.64 s chunks. This needs no hardware and gives
-   a direct accuracy comparison with what the Mac app does today.
+1. **Host evaluation.** Done for Oído, see below. Still open: run
+   `task bench` on the Mac for the whisper and parakeet numbers on the same
+   clips, and record a few minutes of real dictation to replace the TTS
+   clips.
 2. **Board bring-up without a mic.** Flash Oído's stock firmware in file mode
    on one of the boards and reproduce their RTF figures.
 3. **Add a microphone.** INMP441 is what every project uses (SCK GPIO4,
@@ -165,6 +166,75 @@ A standalone device changes the architecture more than the model does:
 5. Decide on project structure once step 3 shows whether accuracy on a real
    microphone is good enough to be worth a hardware build.
 
+## Host evaluation (2026-11-12)
+
+Oído's host CLI (`esp32/host/tasr_cli`, commit `8c3d78e`) built on Linux x86
+and run on this repo's benchmark clips from
+`internal/transcribe/testdata/references.json`, plus whisper.cpp's `jfk.wav`.
+The authors report the host build and the chip print identical transcripts
+for v2, so this should predict on-chip accuracy; that parity was not
+re-checked here. Scoring: lowercase, punctuation stripped, word edit distance.
+
+Word errors / reference words:
+
+| Configuration | On-chip speed | short | medium | long | jfk | 3 tech clips | all 4 |
+|---|---|---|---|---|---|---|---|
+| v2 A, streaming 0.64 s, LM | 0.72, real time | 2/9 | 9/19 | 8/31 | 0/22 | 32.2 % | 23.5 % |
+| v2 A, streaming 1.28 s, LM | 0.61, real time | 2/9 | 9/19 | 7/31 | 0/22 | 30.5 % | 22.2 % |
+| v2 A, streaming 0.64 s, greedy | real time | 2/9 | 10/19 | 6/31 | 4/22 | 30.5 % | 27.2 % |
+| v2 B, streaming 0.64 s, LM (beam 2) | 0.54, real time | 4/9 | 10/19 | 5/31 | 1/22 | 32.2 % | 24.7 % |
+| v2 B, streaming 1.28 s, LM | real time | 2/9 | 10/19 | 5/31 | 2/22 | 28.8 % | 23.5 % |
+| v2 A, full context, LM | not real time | 1/9 | 7/19 | 3/31 | 0/22 | 18.6 % | 13.6 % |
+| v2 B, full context, LM | not real time | 2/9 | 7/19 | 5/31 | 0/22 | 23.7 % | 17.3 % |
+| v1 nemo8, LM | 1.97, 2x too slow | 1/9 | 7/19 | 5/31 | 0/22 | 22.0 % | 16.0 % |
+| v1 nemo4, greedy | 1.76, too slow | 1/9 | 6/19 | 3/31 | 0/22 | 16.9 % | 12.3 % |
+
+What v2 A streaming (the real-time setting) actually printed:
+
+| Reference | Output |
+|---|---|
+| The kubernetes cluster ran three pods on each node. | that cuber's cluster ran three pods on each node |
+| The webhook endpoint returned a four hundred error because the payload exceeded the maximum size limit for JSON serialization. | the we would then point returned to four hundred a because the paload exceeded the maximum size limit for jason ceallization |
+| After deploying the micro services to production we noticed that the gRPC connections were timing out. The root cause was a misconfigured load balancer that did not support HTTP two multiplexing. | after deploying the micro's services to production we noticed that the grpc connections were timing out the route cost was a misconigured low balancer that did not support age d pto multiplexing |
+| And so my fellow Americans ask not what your country can do for you ask what you can do for your country. | and so my fellow americans ask not what your country can do for you ask what you can do for your country |
+
+Reading the result:
+
+- **Plain English is fine.** JFK is word-perfect in every LM configuration.
+- **Technical dictation is not.** Roughly one word in three is wrong in the
+  real-time setting. Most errors are jargon the model has never seen
+  (kubernetes, webhook, endpoint, payload, JSON, HTTP). Some are not:
+  "error" became "a", "root cause" became "route cost", "load" became "low".
+  Those ordinary-word errors mostly disappear with full context, so they are
+  the cost of streaming.
+- **The model emits non-words** ("paload", "misconigured", "ceallization").
+  It spells from sub-word pieces; there is no dictionary constraint.
+- **The slow v1 model does not rescue jargon.** It is better on ordinary
+  words but still fails on the same vocabulary, so this is a training-data
+  limit and not a quantisation or streaming artefact.
+- Variant B is not clearly worse than A on these clips, and 1.28 s chunks
+  help only slightly. The sample is too small to rank them.
+
+Limits of this run: four clips and 81 words, three of them one macOS TTS
+voice reading sentences chosen to be hard. This is directional, not a
+benchmark. **The whisper and parakeet baselines were not run**: both backends
+need macOS (Metal / CoreML) and this ran on Linux. Run `task bench` on the
+Mac to fill in that column; expect a large gap in their favour on jargon.
+
+Implication: as it stands this is a standalone dictation device for everyday
+English, not a replacement for the Mac app for developer dictation. A
+vocabulary-biasing step (boosting a user word list in the on-chip beam
+search) or fine-tuning on technical speech would be the way to close that
+gap, and the licence terms cover derived models too.
+
+To reproduce:
+
+```
+git clone https://github.com/lokutor-ai/oido && cd oido/esp32/host && make tasr_cli
+./tasr_cli ../../models/oido_v2a.tnm --lm ../../models/oido_v2.tlm --nstream --chunk 8 clip.wav   # streaming 0.64 s
+./tasr_cli ../../models/oido_v2a.tnm --lm ../../models/oido_v2.tlm clip.wav                       # full context
+```
+
 ## Verification notes
 
 - Read directly from a clone: Oído's README, engine header, model licence and
@@ -174,8 +244,8 @@ A standalone device changes the architecture more than the model does:
 - From search summaries only, not opened (hosts blocked in this session):
   the Oído arXiv paper (2610.13447), Hugging Face model cards, the Cactus
   Whistle announcement, the TinySTT blog post, Moonshine parameter counts.
-- Not done: no third-party code was built or run. No claim above has been
-  reproduced independently.
+- Run here: Oído's host CLI only (previous section). Speed, memory and
+  board figures are the authors' and have not been reproduced.
 
 ## Sources
 
