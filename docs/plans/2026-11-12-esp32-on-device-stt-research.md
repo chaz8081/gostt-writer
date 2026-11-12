@@ -295,15 +295,8 @@ Caveats:
   five models is noise; the gap between them and Oído is not.
 - **Kroko was tested as released (float ONNX), not the 2/4-bit weights the
   P4 runs.** The P4 project reports that requantisation costs about half a
-  point of LibriSpeech WER (3.94 to 4.34 clean). The P4 engine's host build
-  (`pieasr/host`, commit `68fcf81`) compiles on Linux and its three unit
-  tests pass, but it has **not been run on these clips**: the 2/4-bit
-  weights (`kroko-en-q24-v1.bin`, 26.7 MB) are published only on Hugging
-  Face and could not be downloaded in this session. To finish:
-  `python models/download.py`, convert each clip to raw float32 16 kHz, then
-  `build/host/transcribe models/kroko-en-q24-v1.bin int+beam4 clip.f32`.
-  The engine also supports phrase biasing (`PIEASR_PHRASES=<file>`), worth
-  testing with a list of technical terms.
+  point of LibriSpeech WER (3.94 to 4.34 clean). The 2/4-bit weights were
+  tested afterwards; see "The P4's compressed weights" below.
 - Kroko needed about 2 s of trailing silence before it emitted the last
   word; with 0.8 s the final word was cut off. This is consistent with the
   roughly 2 s word latency the P4 project reports, and matters for a
@@ -316,6 +309,39 @@ Caveats:
 - A 20 M parameter streaming Zipformer was also run and dropped the first
   words of every clip. That looks like a harness problem and it is excluded.
 
+### The P4's compressed weights (2026-11-12)
+
+The P4 project's engine (`esp32-pie-asr`, commit `68fcf81`) was built for the
+host (`pieasr/host`) and run with the actual 2/4-bit weights the board loads
+(`kroko-en-q24-v1.bin`, 26.7 MB, SHA-256 verified against the repo's pinned
+hash). The engine's golden test passes: 8 clips, 0 differences from the
+recorded reference outputs. The authors state the host build computes what
+the chip computes bit for bit; that claim was not checked on a board.
+
+| Configuration | Tech clip errors (58 words) | JFK errors |
+|---|---|---|
+| `int+beam4`, the firmware's configuration | 1 (1.7 %) | 0 |
+| `int`, greedy | 1 (1.7 %) | 0 |
+| `int+beam4` with a 5-entry phrase list | **0** | 0 |
+| For reference: Kroko as released, float (above) | 1 (1.7 %) | 0 |
+
+- **Compression cost nothing on these clips.** The 27 MB weights made the
+  same single error as the 71 MB original: "HTTP two" heard as "HTTP to".
+- **Phrase biasing fixed that error.** The engine takes a text file of words
+  to listen for (`PIEASR_PHRASES`). With `HTTP/2 = HTTP two`, `gRPC = GRPC`,
+  `Kubernetes`, `webhook`, `JSON`, the long clip came out as "HTTP two
+  multiplexing" and nothing else broke. The list was written after seeing
+  the error on this same clip, so this shows the mechanism works, not how
+  well it generalises. The host tool only biases the search; rewriting the
+  spoken form to the shown form ("HTTP two" to "HTTP/2") happens in the
+  firmware and was not exercised.
+- Capitalisation at sentence starts is inconsistent ("the Kubernetes
+  cluster"), and biasing capitalised one word oddly ("webhook Endpoint").
+  A small clean-up pass would still be needed.
+- Each clip had 2 s of silence appended, as in the earlier Kroko run.
+- Host run times say nothing about the board; the C reference kernels are
+  slow on purpose.
+
 ### Revised hardware recommendation
 
 The ESP32-S3 with Oído is real, but not good enough for technical dictation.
@@ -323,8 +349,8 @@ The **ESP32-P4X with 32 MB PSRAM** is now the first choice: it keeps the
 microcontroller advantages (instant boot, one USB cable, existing HID
 firmware carries over) and the model it runs was near-perfect on these
 clips. Licences are also cleaner: Apache-2.0 engine, CC-BY-SA weights. Open
-risks, none tested: the 2/4-bit weights on real hardware, the ~2 s word
-latency, the microSD requirement, and which retail boards carry the required
+risks: the ~2 s word latency (not tested), real-microphone audio (not
+tested), the microSD requirement, and which retail boards carry the required
 chip revision (v3 / P4X). A Pi-class board remains the fallback if the P4
 disappoints.
 
@@ -355,3 +381,4 @@ disappoints.
 - https://huggingface.co/UsefulSensors/moonshine-streaming-tiny
 - https://docs.espressif.com/projects/esp-sr/en/latest/esp32s3/
 - https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models
+- https://huggingface.co/BoumedineBillal/esp32-pie-asr-kroko-en
