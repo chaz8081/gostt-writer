@@ -354,6 +354,34 @@ tested), the microSD requirement, and which retail boards carry the required
 chip revision (v3 / P4X). A Pi-class board remains the fallback if the P4
 disappoints.
 
+### P4X board candidates (2026-11-12)
+
+Requirements, from the P4 project's README and `sdkconfig.defaults`:
+
+- Engine, hard: chip revision v3.x (part `ESP32-P4NRW32X`; the firmware sets
+  `CONFIG_ESP32P4_SELECTS_REV_LESS_V3=n`), 32 MB PSRAM, and somewhere to hold
+  27 MB of weights (microSD; the reference board has only 16 MB flash).
+- Our device: a microphone, and a USB port wired to the P4's own USB OTG so
+  it can be a keyboard (full speed is enough).
+- Nice to have: ES8311 codec on SDMMC 4-bit, so the project's `p4mic` and
+  `p4sdcard` components work unchanged. The project's screen component
+  (EK79007 1024x600 panel) only matters for running its stock firmware.
+
+No vendor page could be opened from this session; everything below is from
+search results and must be checked on the product page before ordering.
+
+| Board | Price | Rev v3 / 32 MB | microSD | Mic | USB to P4 OTG | Notes |
+|---|---|---|---|---|---|---|
+| Waveshare ESP32-P4-WIFI6-DB (also ESP32-P4-WIFI6, -NANO) | not confirmed | listed as P4NRW32X | yes, SDMMC 4-bit | yes, ES8311 | 4-pin header only; the Type-C is a UART bridge | closest to the reference design without a screen |
+| Wireless Tag WT99P461-S1 | $21 | "P4 v3.2", 32 MB | yes | yes, codec unknown | Type-C, full speed | sold direct by vendor, released Nov 2026 |
+| Espressif ESP32-P4X-Function-EV-Board | ~$60 | yes | yes | yes, ES8311 | yes | the board the project was built on; out of stock at DigiKey and Mouser |
+| SparkFun IoT RedBoard ESP32-P4 | $49.95 | P4NRW32X v3.x | reported | none found | unknown | would need an external I2S mic |
+
+Avoid unless the seller confirms the chip: Waveshare ESP32-P4-Pico (listed
+as `ESP32-P4NRW32`, revision 1.x) and any older stock of the boards above.
+Community reports say Waveshare units shipped before about August 2026 carry
+revision 1.x silicon. `esptool chip-id` shows the revision on arrival.
+
 ## Verification notes
 
 - Read directly from a clone: Oído's README, engine header, model licence and
