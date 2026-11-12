@@ -1,0 +1,54 @@
+# gostt-pad settings. Every value shown is the default; delete what you do
+# not change. The installer copies this file to /etc/gostt-pad/config.yaml.
+
+model:
+  # Folder holding the speech model (encoder, decoder, joiner, tokens).
+  dir: /opt/gostt-pad/models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06
+  # CPU threads for the model. 2 suits every Pi; try 3 if `gostt-pad bench`
+  # reports a speed above 0.7.
+  threads: 2
+  # modified_beam_search is slightly more accurate; greedy_search is faster.
+  decoding: modified_beam_search
+  # Silence fed to the model when dictation stops, so the last word comes out.
+  tail_padding_ms: 2500
+
+audio:
+  # Must write raw 16-bit little-endian mono 16 kHz audio to standard output.
+  # List microphones with `arecord -l`, then replace `default` with for
+  # example `plughw:CARD=Device,DEV=0`.
+  command: "arecord -q -D default -f S16_LE -r 16000 -c 1 -t raw"
+  # Software volume. `gostt-pad check` says when to raise or lower it.
+  gain: 1.0
+
+hid:
+  # The USB keyboard device created by deploy/usb-gadget.sh.
+  device: /dev/hidg0
+  # Pause after each key report, in milliseconds. Raise it if the computer
+  # drops characters.
+  report_delay_ms: 2
+
+gpio:
+  # BCM GPIO numbers. Each switch connects its pin to a ground pin; no
+  # resistor is needed. -1 leaves a button or the LED unused.
+  chip: ""          # empty: found automatically
+  talk: 17          # header pin 11
+  undo: 27          # header pin 13
+  delete_word: 22   # header pin 15
+  new_line: 23      # header pin 16
+  cancel: 24        # header pin 18
+  led: 25           # header pin 22; LED and 330 ohm resistor to ground
+  debounce_ms: 10
+
+talk:
+  # A press shorter than this toggles dictation; a longer one dictates only
+  # while held.
+  hold_ms: 350
+
+typing:
+  # Capitalise the first letter of a sentence.
+  capitalize: true
+  # The last word is typed once nothing new has been heard for this long.
+  settle_ms: 1500
+  # No new word for this long starts a new undo step. Words arrive in bursts
+  # about 1.3 seconds apart, so values under 1500 split phrases mid-sentence.
+  phrase_gap_ms: 2000

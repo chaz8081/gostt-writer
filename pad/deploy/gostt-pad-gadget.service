@@ -1,0 +1,12 @@
+[Unit]
+Description=gostt-pad USB keyboard gadget
+After=sys-kernel-config.mount
+Requires=sys-kernel-config.mount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/gostt-pad/usb-gadget.sh
+
+[Install]
+WantedBy=multi-user.target

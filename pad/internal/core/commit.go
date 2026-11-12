@@ -3,6 +3,7 @@ package core
 import (
 	"strings"
 	"time"
+	"unicode"
 )
 
 // committer decides how much of a growing hypothesis is stable enough to
@@ -11,11 +12,13 @@ import (
 // the hypothesis has stopped changing.
 type committer struct {
 	settle    time.Duration // unchanged this long: the last word is typed
-	phraseGap time.Duration // unchanged this long: the phrase ends
+	phraseGap time.Duration // no new word for this long: the phrase ends
 
 	hyp        string        // the hypothesis last seen
 	committed  string        // the prefix of it already typed
 	unchanged  time.Duration // audio time since the hypothesis last changed
+	wordChars  int           // letters and digits in the hypothesis
+	wordQuiet  time.Duration // audio time since it last gained a letter or digit
 	phraseOpen bool          // something was typed since the last phrase end
 }
 
@@ -28,8 +31,17 @@ func (c *committer) advance(hyp string, dur time.Duration) (delta string, endPhr
 	} else {
 		c.unchanged += dur
 	}
+	// The speaker's pauses are judged by when new words arrive. Punctuation
+	// does not count: the model often adds a full stop seconds after the
+	// sentence, which would otherwise hide the pause that followed it.
+	if n := countWordChars(hyp); n != c.wordChars {
+		c.wordChars = n
+		c.wordQuiet = 0
+	} else {
+		c.wordQuiet += dur
+	}
 	delta = c.take(c.unchanged >= c.settle)
-	if c.phraseOpen && c.unchanged >= c.phraseGap {
+	if c.phraseOpen && c.wordQuiet >= c.phraseGap && c.committed == c.hyp {
 		c.phraseOpen = false
 		endPhrase = true
 	}
@@ -80,4 +92,15 @@ func (c *committer) take(all bool) string {
 		c.phraseOpen = true
 	}
 	return delta
+}
+
+// countWordChars counts the letters and digits in s.
+func countWordChars(s string) int {
+	n := 0
+	for _, r := range s {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			n++
+		}
+	}
+	return n
 }

@@ -69,7 +69,7 @@ type Talk struct {
 type Typing struct {
 	Capitalize  bool `yaml:"capitalize"`
 	SettleMs    int  `yaml:"settle_ms"`     // the last word is typed after this much quiet
-	PhraseGapMs int  `yaml:"phrase_gap_ms"` // a pause this long starts a new undo step
+	PhraseGapMs int  `yaml:"phrase_gap_ms"` // no new word for this long starts a new undo step
 }
 
 // Default returns the settings used when the file does not say otherwise.
@@ -88,17 +88,31 @@ func Default() Config {
 		HID:    HID{Device: "/dev/hidg0", ReportDelayMs: 2},
 		GPIO:   GPIO{Talk: 17, Undo: 27, DeleteWord: 22, NewLine: 23, Cancel: 24, LED: 25, DebounceMs: 10},
 		Talk:   Talk{HoldMs: 350},
-		Typing: Typing{Capitalize: true, SettleMs: 1000, PhraseGapMs: 2000},
+		Typing: Typing{Capitalize: true, SettleMs: 1500, PhraseGapMs: 2000},
 	}
 }
 
-// DefaultPath is where the settings file is looked for.
+// SystemPath is the settings file the installer writes for the service.
+const SystemPath = "/etc/gostt-pad/config.yaml"
+
+// DefaultPath is where the settings file is looked for: the user's own file
+// if there is one, otherwise the system-wide file if there is one.
 func DefaultPath() string {
+	user := filepath.Join(home(), ".config", "gostt-pad", "config.yaml")
 	if d := os.Getenv("XDG_CONFIG_HOME"); d != "" {
-		return filepath.Join(d, "gostt-pad", "config.yaml")
+		user = filepath.Join(d, "gostt-pad", "config.yaml")
 	}
-	return filepath.Join(home(), ".config", "gostt-pad", "config.yaml")
+	if _, err := os.Stat(user); err == nil {
+		return user
+	}
+	if _, err := os.Stat(systemPath); err == nil {
+		return systemPath
+	}
+	return user
 }
+
+// systemPath is SystemPath, replaceable in tests.
+var systemPath = SystemPath
 
 // Load reads the settings file at path over the defaults. A missing file is
 // not an error: the defaults are returned.

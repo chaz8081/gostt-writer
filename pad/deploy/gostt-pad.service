@@ -1,0 +1,15 @@
+[Unit]
+Description=gostt-pad on-device dictation keyboard
+After=gostt-pad-gadget.service sound.target
+Wants=gostt-pad-gadget.service
+
+[Service]
+User=__USER__
+SupplementaryGroups=input audio gpio
+Environment=LD_LIBRARY_PATH=/opt/gostt-pad/lib
+ExecStart=/opt/gostt-pad/gostt-pad run -config /etc/gostt-pad/config.yaml
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

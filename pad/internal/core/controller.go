@@ -61,7 +61,7 @@ type KeyEvent struct {
 type Options struct {
 	HoldThreshold time.Duration // talk key: shortest press that is a hold
 	Settle        time.Duration // hypothesis unchanged this long: type its last word
-	PhraseGap     time.Duration // hypothesis unchanged this long: the phrase ends
+	PhraseGap     time.Duration // no new word for this long: the phrase ends
 	IdleReset     time.Duration // nothing new for this long: restart the stream
 	PreRoll       time.Duration // audio from before the talk key that is kept
 	Capitalize    bool          // capitalise the start of sentences
@@ -69,7 +69,7 @@ type Options struct {
 
 // Defaults for Options.
 const (
-	DefaultSettle    = 1000 * time.Millisecond
+	DefaultSettle    = 1500 * time.Millisecond
 	DefaultPhraseGap = 2000 * time.Millisecond
 	DefaultIdleReset = 10 * time.Second
 	DefaultPreRoll   = 300 * time.Millisecond

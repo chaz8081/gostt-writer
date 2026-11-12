@@ -44,7 +44,7 @@ func TestLoadOverridesOnlyWhatIsGiven(t *testing.T) {
 	if cfg.Model.Threads != 4 || cfg.GPIO.Cancel != -1 || cfg.Typing.Capitalize {
 		t.Errorf("overrides not applied: %+v", cfg)
 	}
-	if cfg.Model.Decoding != "modified_beam_search" || cfg.GPIO.Talk != 17 || cfg.Typing.SettleMs != 1000 {
+	if cfg.Model.Decoding != "modified_beam_search" || cfg.GPIO.Talk != 17 || cfg.Typing.SettleMs != 1500 {
 		t.Errorf("defaults lost: %+v", cfg)
 	}
 }
@@ -103,5 +103,42 @@ func TestPaths(t *testing.T) {
 	t.Setenv("HOME", "/home/pi")
 	if got := DefaultPath(); got != "/home/pi/.config/gostt-pad/config.yaml" {
 		t.Errorf("DefaultPath = %q", got)
+	}
+}
+
+func TestDefaultPathPrefersUserThenSystem(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	old := systemPath
+	defer func() { systemPath = old }()
+	systemPath = filepath.Join(dir, "etc.yaml")
+	user := filepath.Join(dir, "gostt-pad", "config.yaml")
+
+	if got := DefaultPath(); got != user {
+		t.Errorf("neither file exists: got %q, want the user path", got)
+	}
+	_ = os.WriteFile(systemPath, nil, 0o600)
+	if got := DefaultPath(); got != systemPath {
+		t.Errorf("only the system file exists: got %q", got)
+	}
+	_ = os.MkdirAll(filepath.Dir(user), 0o700)
+	_ = os.WriteFile(user, nil, 0o600)
+	if got := DefaultPath(); got != user {
+		t.Errorf("both exist: got %q, want the user file", got)
+	}
+}
+
+// The example file is what the installer copies, so it must load and must
+// say the same as the built-in defaults.
+func TestExampleFileMatchesDefaults(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "/opt/gostt-pad")
+	cfg, err := Load("../../config.example.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Default()
+	want.Model.Dir = "/opt/gostt-pad/models/" + ModelName
+	if cfg != want {
+		t.Errorf("config.example.yaml differs from the defaults:\n got %+v\nwant %+v", cfg, want)
 	}
 }

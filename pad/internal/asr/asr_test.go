@@ -143,12 +143,15 @@ func TestToggleSessionTypesAndUndoes(t *testing.T) {
 				t.Errorf("stray spaces in %q", got)
 			}
 
-			s.tap(core.KeyUndo) // the long clip was one phrase
-			if s.host.Text() != afterMedium {
+			// Each clip was followed by a pause, so each is one undo step. A
+			// sentence's full stop can arrive after the snapshot was taken,
+			// so compare words, not punctuation.
+			s.tap(core.KeyUndo)
+			if words(s.host.Text()) != words(afterMedium) {
 				t.Errorf("after one undo:\n got %q\nwant %q", s.host.Text(), afterMedium)
 			}
 			s.tap(core.KeyUndo)
-			if s.host.Text() != afterShort {
+			if words(s.host.Text()) != words(afterShort) {
 				t.Errorf("after two undos:\n got %q\nwant %q", s.host.Text(), afterShort)
 			}
 			s.tap(core.KeyUndo)

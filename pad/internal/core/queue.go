@@ -15,6 +15,10 @@ type ReportQueue struct {
 	log   *slog.Logger
 	ch    chan []Report
 	wg    sync.WaitGroup
+
+	// OnBatch, if set before the first Send, is called after each batch
+	// has been written.
+	OnBatch func()
 }
 
 // NewReportQueue starts a queue writing to w, pausing delay after each
@@ -29,8 +33,15 @@ func NewReportQueue(w io.Writer, delay time.Duration, log *slog.Logger) *ReportQ
 	return q
 }
 
-// Send queues reports for writing.
-func (q *ReportQueue) Send(reports []Report) { q.ch <- reports }
+// Send queues reports for writing. If the host has stopped taking input and
+// the queue is full, the reports are dropped rather than stalling the pad.
+func (q *ReportQueue) Send(reports []Report) {
+	select {
+	case q.ch <- reports:
+	default:
+		q.log.Error("the host is not accepting keys; dropping text")
+	}
+}
 
 // Close writes what is queued, lifts all keys, and stops the queue.
 func (q *ReportQueue) Close() {
@@ -50,6 +61,9 @@ func (q *ReportQueue) run() {
 			if q.delay > 0 {
 				time.Sleep(q.delay)
 			}
+		}
+		if q.OnBatch != nil {
+			q.OnBatch()
 		}
 	}
 }

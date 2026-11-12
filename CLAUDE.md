@@ -48,6 +48,15 @@ task fw-test        # Host-side C protobuf tests (firmware/esp32/test/)
 task ble-pair       # ECDH key exchange pairing
 ```
 
+### Standalone pad (Raspberry Pi)
+
+`pad/` is a separate Go module (Linux only) for the standalone dictation macro pad: on-device STT via sherpa-onnx, typed out as a USB HID keyboard. It does not share code or dependencies with the macOS app. See `pad/README.md`.
+
+```bash
+cd pad && go test ./...                 # unit tests, no model needed
+GOSTT_PAD_MODEL_DIR=<dir> go test ./internal/asr/   # end-to-end with the real model
+```
+
 ## Architecture
 
 Entry point: `cmd/gostt-writer/main.go`. All application packages are under `internal/`.
@@ -102,7 +111,7 @@ Reference: `config.example.yaml`
 
 ## CI
 
-All CI runs on `macos-15` (Apple Silicon). Three workflows:
+The app's CI runs on `macos-15` (Apple Silicon); `pad.yml` runs the pad module's tests on `ubuntu-latest`. Workflows:
 - `build-test.yml` — build + test on push/PR to main
 - `lint.yml` — golangci-lint on all branches/PRs
 - `release.yml` — GoReleaser on `v*` tags (darwin/arm64 only)

@@ -439,3 +439,40 @@ func TestReportQueue(t *testing.T) {
 		t.Errorf("writes that succeeded = %d, want 1", fw.got)
 	}
 }
+
+// The model often adds a sentence's full stop a couple of seconds late. That
+// must not hide the pause after the sentence, and the full stop must stay
+// part of the phrase it belongs to.
+func TestCommitterLatePunctuationDoesNotHideAPause(t *testing.T) {
+	c := committer{settle: 1500 * time.Millisecond, phraseGap: 2 * time.Second}
+	step := 100 * time.Millisecond
+	feed := func(hyp string, d time.Duration) (typed string, ends int) {
+		for ; d > 0; d -= step {
+			delta, end := c.advance(hyp, step)
+			typed += delta
+			if end {
+				ends++
+			}
+		}
+		return
+	}
+	typed, ends := feed("on each node", 1200*time.Millisecond)
+	if typed != "on each" || ends != 0 {
+		t.Fatalf("got %q, %d", typed, ends)
+	}
+	// the full stop arrives 1.2 s after the last word
+	typed, ends = feed("on each node.", 1400*time.Millisecond)
+	if typed != "" || ends != 0 {
+		t.Fatalf("before the full stop settles: got %q, %d ends", typed, ends)
+	}
+	// The pause is now 2.6 s by words, past the gap, but "node." is still
+	// waiting to settle: the phrase must not end with text pending.
+	typed, ends = feed("on each node.", 300*time.Millisecond)
+	if typed != " node." || ends != 1 {
+		t.Fatalf("the word and its full stop are typed, then the phrase ends: got %q, %d ends", typed, ends)
+	}
+	typed, ends = feed("on each node. The web", 100*time.Millisecond)
+	if typed != " The" || ends != 0 {
+		t.Fatalf("next phrase: got %q, %d", typed, ends)
+	}
+}
