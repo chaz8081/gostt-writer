@@ -235,6 +235,92 @@ git clone https://github.com/lokutor-ai/oido && cd oido/esp32/host && make tasr_
 ./tasr_cli ../../models/oido_v2a.tnm --lm ../../models/oido_v2.tlm clip.wav                       # full context
 ```
 
+## Larger models on the same clips (2026-11-12)
+
+To see whether better hardware would fix the jargon problem, the models that
+such hardware could run were tested on the same four clips. All ran on Linux
+x86 through sherpa-onnx 2.0.1, using the model archives from the sherpa-onnx
+`asr-models` GitHub release. This measures accuracy only. Nothing here says
+how fast any of them runs on a given board.
+
+Scoring differs slightly from the table above: numbers and compounds are
+normalised on both sides ("400" = "four hundred", "HTTP2" = "HTTP two",
+"micro services" = "microservices", "web hook" = "webhook"), because these
+models write digits. Oído is re-scored the same way, so rows are comparable
+within this table. Tech clips total 58 words after normalisation.
+
+| Model | Size on disk | Smallest hardware that could run it | Streaming | Tech clip errors | JFK errors |
+|---|---|---|---|---|---|
+| Parakeet TDT 0.6B v2, int8 | 661 MB | Pi 5 class | no | **0 / 58** | 0 |
+| Kroko streaming Zipformer (65.7 M) | 71 MB | **ESP32-P4X** (as 2/4-bit, 27 MB) | yes | **1 / 58 (1.7 %)** | 0 (beam), 1 (greedy) |
+| Moonshine base (v1 int8, v2 quantised) | 141–286 MB | Pi class | no (as run) | 1 / 58 (1.7 %) | 0 |
+| Moonshine tiny v2, quantised | 44 MB | Pi class | no (as run) | 2 / 58 (3.4 %) | 0 |
+| Whisper base.en, int8 | 160 MB | Pi class | no | 2 / 58 (3.4 %) | 0 |
+| Moonshine tiny v1, int8 | 124 MB | Pi class | no | 4 / 58 (6.9 %) | 0 |
+| Whisper tiny.en, int8 | 103 MB | Pi class | no | 5 / 58 (8.6 %) | 0 |
+| Oído v1 nemo4 (too slow on S3) | 8.3 MB | ESP32-S3 | no | 10 / 58 (17.2 %) | 0 |
+| Oído v2 A, full context (not real time) | 9.0 MB | ESP32-S3 | no | 11 / 58 (19.0 %) | 0 |
+| Oído v2 A, streaming 0.64 s (real time) | 9.0 MB | ESP32-S3 | yes | 20 / 58 (34.5 %) | 0 |
+
+What they printed for the hardest clip (reference: "The webhook endpoint
+returned a four hundred error because the payload exceeded the maximum size
+limit for JSON serialization."):
+
+| Model | Output |
+|---|---|
+| Parakeet | The webhook endpoint returned a 400 error because the payload exceeded the maximum size limit for JSON serialization. |
+| Kroko | The web hook endpoint returned a four hundred error because the payload exceeded the maximum size limit for JSON serialization. |
+| Moonshine tiny v2 | The webhook endpoint returned a 400 error because the payload exceeded the maximum size limit for JSON serialization. |
+| Moonshine base | The Wethhook endpoint returned a 400 error because ... JSON serialization. |
+| Whisper base.en | The wet hook endpoint returned a 400 error because ... JSON serialization. |
+| Oído v2 A streaming | the we would then point returned to four hundred a because the paload exceeded the maximum size limit for jason ceallization |
+
+Findings:
+
+- **The jargon problem is a model-size problem, and it goes away one step
+  up.** Every model here beats every Oído configuration by a wide margin.
+  All of them also produce capitalisation and punctuation, which Oído does
+  not.
+- **Kroko is the standout for this project.** It is a true streaming model,
+  made one error in 58 words ("HTTP two" heard as "HTTP to"), and is the
+  model `esp32-pie-asr` runs in real time on an ESP32-P4X. It matched the
+  600 M parameter Parakeet to within one word.
+- "Kubernetes" separates the tiers: Parakeet, Kroko, Moonshine base and
+  Whisper base get it; both tiny models and every Oído variant do not.
+- Moonshine tiny v2 is good for 44 MB, better than Whisper base.en here.
+
+Caveats:
+
+- Still four clips, three from one TTS voice. The ranking between the top
+  five models is noise; the gap between them and Oído is not.
+- **Kroko was tested as released (float ONNX), not the 2/4-bit weights the
+  P4 runs.** The P4 project reports that requantisation costs about half a
+  point of LibriSpeech WER (3.94 to 4.34 clean). The P4 engine itself was
+  not run.
+- Kroko needed about 2 s of trailing silence before it emitted the last
+  word; with 0.8 s the final word was cut off. This is consistent with the
+  roughly 2 s word latency the P4 project reports, and matters for a
+  push-to-talk design: keep feeding silence after key release.
+- Parakeet here is the int8 ONNX export, standing in for the CoreML build the
+  Mac app uses. Whisper is the ONNX export, not whisper.cpp.
+- Moonshine v2's streaming tiny/small/medium archives could not be located
+  (Hugging Face is blocked from this session); the v2 tiny and base tested
+  were run on whole utterances.
+- A 20 M parameter streaming Zipformer was also run and dropped the first
+  words of every clip. That looks like a harness problem and it is excluded.
+
+### Revised hardware recommendation
+
+The ESP32-S3 with Oído is real, but not good enough for technical dictation.
+The **ESP32-P4X with 32 MB PSRAM** is now the first choice: it keeps the
+microcontroller advantages (instant boot, one USB cable, existing HID
+firmware carries over) and the model it runs was near-perfect on these
+clips. Licences are also cleaner: Apache-2.0 engine, CC-BY-SA weights. Open
+risks, none tested: the 2/4-bit weights on real hardware, the ~2 s word
+latency, the microSD requirement, and which retail boards carry the required
+chip revision (v3 / P4X). A Pi-class board remains the fallback if the P4
+disappoints.
+
 ## Verification notes
 
 - Read directly from a clone: Oído's README, engine header, model licence and
@@ -244,8 +330,9 @@ git clone https://github.com/lokutor-ai/oido && cd oido/esp32/host && make tasr_
 - From search summaries only, not opened (hosts blocked in this session):
   the Oído arXiv paper (2610.13447), Hugging Face model cards, the Cactus
   Whistle announcement, the TinySTT blog post, Moonshine parameter counts.
-- Run here: Oído's host CLI only (previous section). Speed, memory and
-  board figures are the authors' and have not been reproduced.
+- Run here: Oído's host CLI, and the sherpa-onnx models in the section
+  above. Accuracy only. Speed, memory and board figures are the authors' and
+  have not been reproduced.
 
 ## Sources
 
@@ -260,3 +347,4 @@ git clone https://github.com/lokutor-ai/oido && cd oido/esp32/host && make tasr_
 - https://github.com/moonshine-ai/moonshine/blob/main/micro/examples/rp2350/README.md
 - https://huggingface.co/UsefulSensors/moonshine-streaming-tiny
 - https://docs.espressif.com/projects/esp-sr/en/latest/esp32s3/
+- https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models
