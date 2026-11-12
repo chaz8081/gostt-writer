@@ -1,4 +1,4 @@
-package pad
+package core
 
 import "time"
 
@@ -71,4 +71,15 @@ func (k *TalkKey) Release(t time.Time) TalkEvent {
 		return TalkStop
 	}
 	return TalkNone // a tap: dictation stays on until the next tap
+}
+
+// Cancel turns dictation off without the usual stop, for when the user
+// throws away what they are saying. A release of a key that is still down is
+// then ignored.
+func (k *TalkKey) Cancel() {
+	k.active = false
+	if k.startedHere {
+		k.startedHere = false
+		k.stoppedHere = true
+	}
 }

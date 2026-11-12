@@ -1,4 +1,4 @@
-package pad
+package core
 
 import (
 	"bytes"
@@ -136,49 +136,24 @@ func TestTalkKeyCustomThreshold(t *testing.T) {
 	}
 }
 
-// host plays reports back the way a text field would, so tests can check
-// what ends up on screen.
-type host struct{ text []rune }
+// host wraps HostSim for tests.
+type host struct{ sim HostSim }
 
 func (h *host) apply(t *testing.T, reports []Report) {
 	t.Helper()
-	keys := map[[2]byte]rune{}
-	for r := rune(0); r < 128; r++ {
-		if mod, key, ok := EncodeRune(r); ok {
-			keys[[2]byte{mod, key}] = r
-		}
-	}
-	for _, r := range reports {
-		mod, key := r[0], r[2]
-		switch {
-		case key == 0:
-		case key == KeyBackspace && mod == 0:
-			if len(h.text) > 0 {
-				h.text = h.text[:len(h.text)-1]
-			}
-		case key == KeyBackspace && mod == ModOption:
-			for len(h.text) > 0 && h.text[len(h.text)-1] == ' ' {
-				h.text = h.text[:len(h.text)-1]
-			}
-			for len(h.text) > 0 && h.text[len(h.text)-1] != ' ' && h.text[len(h.text)-1] != '\n' {
-				h.text = h.text[:len(h.text)-1]
-			}
-		default:
-			c, ok := keys[[2]byte{mod, key}]
-			if !ok {
-				t.Fatalf("unknown report %v", r)
-			}
-			h.text = append(h.text, c)
-		}
+	if err := WriteReports(&h.sim, reports); err != nil {
+		t.Fatal(err)
 	}
 }
+
+func (h *host) String() string { return h.sim.Text() }
 
 func TestTypist(t *testing.T) {
 	var ty Typist
 	var h host
 	check := func(want string) {
 		t.Helper()
-		if got := string(h.text); got != want {
+		if got := h.String(); got != want {
 			t.Fatalf("host text = %q, want %q", got, want)
 		}
 	}
@@ -219,7 +194,7 @@ func TestTypistDeleteWordClearsUndo(t *testing.T) {
 	var h host
 	h.apply(t, ty.Phrase("one two three"))
 	h.apply(t, ty.DeleteWord())
-	if got := string(h.text); got != "one two " {
+	if got := h.String(); got != "one two " {
 		t.Fatalf("host text = %q, want %q", got, "one two ")
 	}
 	if r := ty.UndoPhrase(); r != nil {
@@ -249,7 +224,7 @@ func TestTypistReset(t *testing.T) {
 		t.Error("undo after Reset must do nothing")
 	}
 	h.apply(t, ty.Phrase("second"))
-	if got := string(h.text); got != "firstsecond" {
+	if got := h.String(); got != "firstsecond" {
 		t.Errorf("host text = %q; after Reset the pad should not add a space", got)
 	}
 }
