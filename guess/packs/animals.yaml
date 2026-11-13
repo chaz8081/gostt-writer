@@ -1,0 +1,75 @@
+# A sample pack. Copy this file to make your own: any set of things works,
+# as long as the questions can tell every item apart.
+#
+# A question id listed under an item's `yes` is true for it, under `maybe`
+# is true only sometimes or open to argument, and anything not listed is
+# false. `say` is how the name is spoken in "Is it ...?".
+name: Animals
+thing: an animal
+questions:
+  - {id: fur, ask: "Does it have fur or hair?"}
+  - {id: feathers, ask: "Does it have feathers?"}
+  - {id: flies, ask: "Can it fly?"}
+  - {id: water, ask: "Does it live in the water?"}
+  - {id: swims, ask: "Is it a good swimmer?"}
+  - {id: legs4, ask: "Does it walk on four legs?"}
+  - {id: nolegs, ask: "Does it have no legs at all?"}
+  - {id: manylegs, ask: "Does it have more than four legs?"}
+  - {id: big, ask: "Is it bigger than a grown-up person?"}
+  - {id: tiny, ask: "Could it sit in your hand?"}
+  - {id: pet, ask: "Do people keep it as a pet at home?"}
+  - {id: farm, ask: "Does it live on a farm?"}
+  - {id: meat, ask: "Does it eat other animals?"}
+  - {id: stripes, ask: "Does it have stripes or spots?"}
+  - {id: cold, ask: "Does it live where it is very cold?"}
+  - {id: africa, ask: "Does it live in Africa?"}
+  - {id: eggs, ask: "Does it lay eggs?"}
+  - {id: shell, ask: "Does it have a shell?"}
+  - {id: jumps, ask: "Is it known for jumping or hopping?"}
+  - {id: trees, ask: "Does it climb trees?"}
+  - {id: horns, ask: "Does it have horns, antlers or tusks?"}
+  - {id: scary, ask: "Would most people be scared to meet one?"}
+  - {id: longneck, ask: "Does it have a very long neck or a very long nose?"}
+  - {id: night, ask: "Is it mostly awake at night?"}
+  - {id: wool, ask: "Do people make wool from its coat?"}
+items:
+  - {name: Dog, say: a dog, yes: [fur, legs4, pet], maybe: [swims, meat, farm]}
+  - {name: Cat, say: a cat, yes: [fur, legs4, pet, meat, trees], maybe: [night, farm, stripes]}
+  - {name: Rabbit, say: a rabbit, yes: [fur, legs4, pet, jumps], maybe: [tiny, farm]}
+  - {name: Hamster, say: a hamster, yes: [fur, legs4, pet, tiny, night]}
+  - {name: Horse, say: a horse, yes: [fur, legs4, big, farm], maybe: [jumps]}
+  - {name: Cow, say: a cow, yes: [fur, legs4, big, farm, horns], maybe: [stripes]}
+  - {name: Pig, say: a pig, yes: [legs4, farm]}
+  - {name: Sheep, say: a sheep, yes: [fur, legs4, farm, wool], maybe: [horns]}
+  - {name: Goat, say: a goat, yes: [fur, legs4, farm, horns], maybe: [trees, jumps]}
+  - {name: Chicken, say: a chicken, yes: [feathers, farm, eggs], maybe: [flies, pet]}
+  - {name: Duck, say: a duck, yes: [feathers, flies, swims, farm, eggs], maybe: [water]}
+  - {name: Lion, say: a lion, yes: [fur, legs4, meat, africa, scary], maybe: [big]}
+  - {name: Tiger, say: a tiger, yes: [fur, legs4, meat, stripes, scary, swims], maybe: [big, night]}
+  - {name: Elephant, say: an elephant, yes: [legs4, big, africa, horns, longneck], maybe: [swims, fur]}
+  - {name: Giraffe, say: a giraffe, yes: [fur, legs4, big, africa, stripes, longneck, horns]}
+  - {name: Zebra, say: a zebra, yes: [fur, legs4, big, africa, stripes]}
+  - {name: Monkey, say: a monkey, yes: [fur, trees], maybe: [africa, legs4, jumps]}
+  - {name: Kangaroo, say: a kangaroo, yes: [fur, jumps], maybe: [big]}
+  - {name: Polar bear, say: a polar bear, yes: [fur, legs4, big, meat, cold, swims, scary]}
+  - {name: Penguin, say: a penguin, yes: [feathers, swims, cold, eggs, meat], maybe: [water]}
+  - {name: Eagle, say: an eagle, yes: [feathers, flies, meat, eggs]}
+  - {name: Owl, say: an owl, yes: [feathers, flies, meat, eggs, night], maybe: [trees]}
+  - {name: Parrot, say: a parrot, yes: [feathers, flies, pet, eggs, trees]}
+  - {name: Bat, say: a bat, yes: [fur, flies, night, tiny], maybe: [scary]}
+  - {name: Shark, say: a shark, yes: [water, swims, nolegs, meat, scary], maybe: [big, eggs]}
+  - {name: Dolphin, say: a dolphin, yes: [water, swims, nolegs, meat, jumps], maybe: [big]}
+  - {name: Whale, say: a whale, yes: [water, swims, nolegs, big], maybe: [meat, cold]}
+  - {name: Goldfish, say: a goldfish, yes: [water, swims, nolegs, pet, tiny, eggs]}
+  - {name: Octopus, say: an octopus, yes: [water, swims, manylegs, meat, eggs], maybe: [scary]}
+  - {name: Crab, say: a crab, yes: [water, manylegs, shell, eggs, meat], maybe: [tiny, swims]}
+  - {name: Turtle, say: a turtle, yes: [legs4, shell, eggs, swims], maybe: [water, pet, tiny]}
+  - {name: Snake, say: a snake, yes: [nolegs, meat, eggs, scary], maybe: [stripes, trees, pet, swims]}
+  - {name: Crocodile, say: a crocodile, yes: [legs4, meat, eggs, scary, swims, africa, big], maybe: [water]}
+  - {name: Frog, say: a frog, yes: [legs4, jumps, eggs, swims, tiny, meat], maybe: [water, stripes, night]}
+  - {name: Spider, say: a spider, yes: [manylegs, tiny, meat, eggs, scary], maybe: [night, pet]}
+  - {name: Bee, say: a bee, yes: [manylegs, flies, tiny, stripes, eggs], maybe: [farm, scary]}
+  - {name: Butterfly, say: a butterfly, yes: [manylegs, flies, tiny, eggs]}
+  - {name: Snail, say: a snail, yes: [nolegs, shell, tiny, eggs], maybe: [night]}
+  - {name: Mouse, say: a mouse, yes: [fur, legs4, tiny, night], maybe: [farm, trees]}
+  - {name: Squirrel, say: a squirrel, yes: [fur, legs4, trees, jumps, tiny]}

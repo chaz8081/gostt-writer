@@ -1,0 +1,62 @@
+# gostt-guess settings. Every value shown is the default; delete what you do
+# not change. The installer copies this file to /etc/gostt-guess/config.yaml.
+
+game:
+  # The things that can be guessed and the questions that tell them apart.
+  pack: /etc/gostt-guess/pack.yaml
+  # Where correct guesses are remembered. Empty forgets them at power off.
+  collection: /var/lib/gostt-guess/found.json
+  max_questions: 20   # questions before the device must guess
+  max_guesses: 3      # wrong guesses before it gives up
+  # Guess as soon as one item is this likely. Lower means fewer questions
+  # and more wrong first guesses.
+  confidence: 0.8
+  # How often to expect a wrong answer from the player. Higher forgives more
+  # mistakes and asks more questions.
+  mistakes: 0.05
+
+hear:
+  # Folder holding the speech recognition model.
+  dir: /opt/gostt-guess/models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06
+  threads: 2
+  # modified_beam_search hears a lone "no" better; greedy_search is faster.
+  decoding: modified_beam_search
+  # Silence fed to the model after a reply, so the last word comes out.
+  tail_padding_ms: 1500
+
+voice:
+  # Folder holding a Piper voice. Others are listed at
+  # https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models
+  dir: /opt/gostt-guess/models/vits-piper-en_US-amy-low
+  threads: 2
+  speed: 0.9          # 1 is the voice's normal speed; lower is slower
+  # Each line is made once and kept here. `gostt-guess voice` fills it.
+  cache: /var/lib/gostt-guess/clips
+
+audio:
+  # Must write raw 16-bit little-endian mono 16 kHz audio to standard output.
+  capture: "arecord -q -D default -f S16_LE -r 16000 -c 1 -t raw"
+  gain: 1.0           # microphone volume; `gostt-guess check` says when to change it
+  # Must read raw 16-bit little-endian mono audio on standard input.
+  play: "aplay -q -D default -t raw -f S16_LE -c 1 -r {rate}"
+  volume: 1.0         # speaker volume; above 1 is louder and may distort
+
+listen:
+  wait_ms: 8000       # how long to wait for a reply before asking again
+  tries: 3            # how often a question is asked before the device stops
+  # Loudness (0 to 1) that counts as speech. `gostt-guess check` suggests a value.
+  level: 0.02
+  quiet_ms: 600       # silence that ends a reply
+  max_speech_ms: 5000 # longest reply
+  skip_ms: 200        # ignored right after the device stops speaking
+
+gpio:
+  # BCM GPIO numbers. Each switch connects its pin to a ground pin; no
+  # resistor is needed. -1 leaves a button or the light unused.
+  chip: ""            # empty: found automatically
+  yes: 17             # header pin 11
+  no: 27              # header pin 13
+  not_sure: 22        # header pin 15
+  play: 23            # header pin 16; starts a game, or starts over
+  light: 25           # header pin 22; LED and 330 ohm resistor to ground
+  debounce_ms: 10

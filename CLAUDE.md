@@ -48,6 +48,16 @@ task fw-test        # Host-side C protobuf tests (firmware/esp32/test/)
 task ble-pair       # ECDH key exchange pairing
 ```
 
+### Guessing game device (Raspberry Pi)
+
+`guess/` is a separate Go module for a standalone talking guessing game for a child: on-device speech recognition and text-to-speech via sherpa-onnx, GPIO buttons, YAML "packs" of things to guess. It does not share code or dependencies with the macOS app. See `guess/README.md`.
+
+```bash
+cd guess && go test ./...               # unit tests, no models needed
+go run ./cmd/gostt-guess -text -pack packs/animals.yaml   # play by typing
+GOSTT_GUESS_ASR_DIR=<dir> GOSTT_GUESS_VOICE_DIR=<dir> go test ./internal/speech/   # real models
+```
+
 ## Architecture
 
 Entry point: `cmd/gostt-writer/main.go`. All application packages are under `internal/`.
@@ -102,7 +112,7 @@ Reference: `config.example.yaml`
 
 ## CI
 
-All CI runs on `macos-15` (Apple Silicon). Three workflows:
+The app's CI runs on `macos-15` (Apple Silicon); `guess.yml` runs the guess module's tests on `ubuntu-latest`. Workflows:
 - `build-test.yml` — build + test on push/PR to main
 - `lint.yml` — golangci-lint on all branches/PRs
 - `release.yml` — GoReleaser on `v*` tags (darwin/arm64 only)

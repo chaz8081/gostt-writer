@@ -1,0 +1,14 @@
+[Unit]
+Description=gostt-guess talking guessing game
+After=sound.target
+
+[Service]
+User=__USER__
+SupplementaryGroups=audio gpio
+Environment=LD_LIBRARY_PATH=/opt/gostt-guess/lib
+ExecStart=/opt/gostt-guess/gostt-guess -config /etc/gostt-guess/config.yaml
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
