@@ -73,47 +73,14 @@ it sounds.
 
 ## Hardware
 
-Either shape works; the software does not care. A flat handheld with a
-hinged lid is the easier build, because a Pi, a speaker, a battery and four
-buttons all want a flat box, and it leaves room for a screen later. A ball
-needs the same parts stacked in a sphere of about 80 mm or more.
+The full build is in [`hardware/README.md`](hardware/README.md): the parts
+list with links, the wiring, the printable case and the assembly steps. In
+short: a Raspberry Pi Zero 2 W on a PiSugar 3 battery board, a 3 W I2S
+amplifier and enclosed speaker, an I2S microphone, five keyboard switches,
+a 2.8 inch touch screen, in a 150 x 96 x 40 mm printed handheld.
 
-| Part | Suggested | Notes |
-|---|---|---|
-| Computer | Raspberry Pi Zero 2 W, 64-bit Raspberry Pi OS Lite | A Pi 4 or 5 also works and is faster. |
-| Speaker amplifier | MAX98357A I2S board | 3 W into 4 ohms from 5 V. |
-| Speaker | 4 ohm, 3 W, 40 to 50 mm | Give it a sealed space behind it; that matters more for loudness than the driver. |
-| Microphone | INMP441 I2S board | Mount it facing the child, away from the speaker. |
-| Buttons | 4 momentary switches | Yes, no, not sure, play. |
-| Light | LED and a 330 ohm resistor | |
-| Power | 5 V, 2 A or more: USB power bank, or LiPo with a boost board | The amplifier draws its peaks from this. |
-
-On a Pi 4 or 5, a USB speakerphone can replace the amplifier, speaker and
-microphone for a first try.
-
-### Wiring
-
-Each switch connects a GPIO pin to any ground pin. No resistors are needed.
-
-| Part | GPIO | Header pin |
-|---|---|---|
-| Yes button | 17 | 11 |
-| No button | 27 | 13 |
-| Not sure button | 22 | 15 |
-| Play button | 23 | 16 |
-| Light (through 330 ohms to ground) | 25 | 22 |
-| Amplifier and microphone bit clock (BCLK / SCK) | 18 | 12 |
-| Amplifier and microphone word clock (LRC / WS) | 19 | 35 |
-| Microphone data (SD) | 20 | 38 |
-| Amplifier data (DIN) | 21 | 40 |
-
-Amplifier VIN to 5 V (pin 2), microphone VDD to 3V3 (pin 1), microphone L/R
-to ground, all grounds together. Add
-`dtoverlay=googlevoicehat-soundcard` to `/boot/firmware/config.txt` and
-reboot; that one sound card then does both playback and recording. Find its
-name with `aplay -l` and put it in `audio.capture` and `audio.play` in place
-of `default`, for example `plughw:CARD=sndrpigooglevoi,DEV=0`. This wiring
-is not yet tested.
+On a Pi 4 or 5, a USB speakerphone and no buttons is enough for a first
+try of the software: `gostt-guess -buttons=false`.
 
 ## Install
 
@@ -210,7 +177,8 @@ Not tested:
 
 ## Not built yet
 
-- A screen (a picture and name for each guess, and the collection).
+- Anything on the screen. The hardware build includes one, wired and
+  mounted, but the program does not draw on it yet.
 - Sound effects, and a pause before the guess.
 - Learning a new item when the device gives up.
 - Languages other than English.

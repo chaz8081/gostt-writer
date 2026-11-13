@@ -58,5 +58,5 @@ gpio:
   no: 27              # header pin 13
   not_sure: 22        # header pin 15
   play: 23            # header pin 16; starts a game, or starts over
-  light: 25           # header pin 22; LED and 330 ohm resistor to ground
+  light: 26           # header pin 37; LED and 330 ohm resistor to ground
   debounce_ms: 10

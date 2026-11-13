@@ -101,7 +101,7 @@ func Default() Config {
 			Play: "aplay -q -D default -t raw -f S16_LE -c 1 -r {rate}", Volume: 1,
 		},
 		Listen: Listen{WaitMs: 8000, Tries: 3, Level: 0.02, QuietMs: 600, MaxSpeechMs: 5000, SkipMs: 200},
-		GPIO:   GPIO{Yes: 17, No: 27, NotSure: 22, Play: 23, Light: 25, DebounceMs: 10},
+		GPIO:   GPIO{Yes: 17, No: 27, NotSure: 22, Play: 23, Light: 26, DebounceMs: 10},
 	}
 }
 
