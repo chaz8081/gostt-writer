@@ -83,7 +83,7 @@ func (r *Rewriter) Rewrite(ctx context.Context, rawText string) (string, error) 
 	if err != nil {
 		return rawText, fmt.Errorf("rewrite: request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return rawText, fmt.Errorf("rewrite: ollama returned HTTP %d", resp.StatusCode)

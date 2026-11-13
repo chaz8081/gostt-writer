@@ -52,7 +52,9 @@ func TestRewriteSuccess(t *testing.T) {
 			Message: chatMessage{Role: "assistant", Content: "Cleaned up text."},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -70,7 +72,8 @@ func TestRewriteTimeout(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(2 * time.Second)
 		resp := chatResponse{Message: chatMessage{Content: "late"}}
-		json.NewEncoder(w).Encode(resp)
+		// The client has timed out and gone by now, so this write is expected to fail.
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()
 
@@ -115,7 +118,9 @@ func TestRewriteEmptyLLMResponse(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := chatResponse{Message: chatMessage{Content: ""}}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
