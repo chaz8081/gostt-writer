@@ -1,59 +1,78 @@
 # Building the gostt-guess handheld
 
-A 150 x 96 x 40 mm handheld with a 2.8 inch touch screen, a loud speaker, a
-microphone, four big answer keys, a power key and a rechargeable battery,
-all inside one printed case.
+A hinged handheld, 162 x 100 mm and 53 mm thick when closed. Inside: a
+Raspberry Pi 4, a 5000 mAh battery board, a 2.8 inch touch screen, a 3 W
+speaker, a microphone and five keys. The lid is held shut by magnets.
 
-![Front of the case](case/front_outside.png)
+![Open](case/open.png)
 
-**Read this first.** Nothing here has been built. The parts were chosen and
-the case was drawn from sellers' listings and one maker's 3D model, without
-any part in hand. Three things follow from that:
+**Status.** Nothing here has been built. What has changed since the first
+version is where the numbers come from: the case is now drawn from the
+makers' own CAD and board files, and checked for collisions against those
+models (`case/check_fit.py`). What that cannot cover is listed, item by
+item, under [What is established and what is not](#what-is-established-and-what-is-not).
+No remote design can be free of unknowns; this one names each and leaves
+slack for it.
 
-1. Order the parts, then **measure them and print `fit_test` before
-   printing the case**. Step 2 below says what to check.
-2. The wiring uses one sound-card setting for both the amplifier and the
-   microphone that is known from Google's AIY Voice HAT but has not been
-   tried with these two boards. Step 5 tests it on the bench before
-   anything goes in the case.
-3. The program does not draw on the screen yet. The screen is wired and
-   mounted so that it is there when the software catches up.
+The case is an original design, not a copy of an existing toy.
 
-The case is an original design. It does not copy any existing toy.
+## Why these parts
+
+| Requirement | Choice | Basis |
+|---|---|---|
+| Speech recognition in real time | Raspberry Pi 4 Model B, 2 GB | The speech library's documentation states its models run in real time on a Pi 4. Scaling a benchmark of this exact model gives about a third of real time on one core, and 290 MB of memory with the voice loaded too. Nothing comparable is published for the Pi Zero 2 W, where estimates range from half of real time to slower than real time. |
+| Several hours of battery | PiSugar 3 Plus, 5000 mAh | 18.5 Wh. The budget below comes to about 3.8 W, so about 4 hours (3.5 to 5). The earlier 1200 mAh choice gave about 2. |
+| Loud | MAX98357A amplifier, 3.2 W into the 4 ohm enclosed speaker | The alternatives with a microphone built in (WM8960 boards) give about 1 W. |
+| Microphone | ICS-43434 I2S board | Uses the same sound-card driver as the amplifier. |
+| Screen | Adafruit PiTFT Plus 2.8" capacitive | Its driver is part of Raspberry Pi OS, it plugs onto the Pi with no wiring, and Adafruit publishes its board files and 3D model. The Waveshare screen chosen before has no driver in Raspberry Pi OS. |
+| Buttons | 5 keyboard switches | Rated for millions of presses; big caps for small hands. |
+| Storage | 32 GB microSD | The system and both speech models need under 4 GB. |
+| No power-off damage | PiSugar's shutdown on a held power key, and at low battery | From PiSugar's documentation. |
+
+Power budget: Pi 4 idle 2.7 W and about 0.9 W more per busy core
+(published measurements); recognition busy about half the time, 0.5 W;
+backlight 0.36 W (from the display's circuit); amplifier averaging 0.15 W
+on speech. The peak, about 2.1 A at 5 V, is inside the PiSugar's 3 A.
 
 ## Parts
 
-Prices are rough, from late 2026; check them. Sellers other than those
-linked carry the same parts.
+| # | Part | Link |
+|---|---|---|
+| 1 | Raspberry Pi 4 Model B, 2 GB | [raspberrypi.com](https://www.raspberrypi.com/products/raspberry-pi-4-model-b/) |
+| 2 | PiSugar 3 Plus (5000 mAh, for Pi 3B/4B) | [Tindie](https://www.tindie.com/products/pisugar/pisugar-3-plus-battery-for-raspberry-pi-3b3b4b/) |
+| 3 | Adafruit PiTFT Plus 2.8" capacitive touch, product 2423 | [adafruit.com/product/2423](https://www.adafruit.com/product/2423) |
+| 4 | Adafruit MAX98357A I2S 3 W amplifier, product 3006 | [adafruit.com/product/3006](https://www.adafruit.com/product/3006) |
+| 5 | Adafruit mono enclosed speaker 3 W 4 ohm, product 3351 | [adafruit.com/product/3351](https://www.adafruit.com/product/3351) |
+| 6 | Adafruit ICS-43434 I2S microphone, product 6049 | [Micro Center](https://www.microcenter.com/quickview/691530/adafruit-industries-i2s-mems-microphone-breakout-ics-43434) |
+| 7 | microSD card, 32 GB, A1 or A2 | |
+| 8 | 5 keyboard switches, Cherry MX style, plate mount, not clicky | |
+| 9 | 5 mm LED and a 330 ohm resistor | |
+| 10 | Silicone-insulated stranded wire, 28 or 30 AWG | |
+| 11 | 3 mm metal rod, 80 mm long (hinge pin) | |
+| 12 | M3 screws, pan or button head: 4 of 12 mm, 4 of 8 mm | |
+| 13 | Soft foam pad, 3 mm thick; thin double-sided tape; superglue; hot glue | |
+| 14 | 4 of your 10 x 1.5 mm magnets | |
 
-| # | Part | Why this one | About |
-|---|---|---|---|
-| 1 | [Raspberry Pi Zero 2 W](https://www.adafruit.com/product/5291), **without** header pins | Runs the speech models. Wires are soldered straight to the board: with header pins and plugs the case would have to be 12 mm thicker. | $15 |
-| 2 | microSD card, 32 GB, A1 or A2 rated | | $8 |
-| 3 | [PiSugar 3](https://www.tindie.com/products/pisugar/pisugar-3-battery-for-raspberry-pi-zero) (the Pi Zero size, 1200 mAh; also [on Amazon](https://www.amazon.com/PiSugar-Portable-Pwnagotchi-Management-Raspberry/dp/B0FB3N1YSK)) | Battery, USB-C charging and 5 V at up to 2.5 A in one board that screws under the Pi with no soldering. It can shut the Pi down properly when the power key is held, which protects the SD card. | $40 |
-| 4 | [Adafruit MAX98357A I2S 3 W amplifier](https://www.adafruit.com/product/3006) | 3.2 W into 4 ohms. | $6 |
-| 5 | [Adafruit mono enclosed speaker, 3 W 4 ohm](https://www.adafruit.com/product/3351) | Already in a sealed box, which is most of what makes a small speaker loud. 70 x 30 x 17 mm. | $4 |
-| 6 | [Adafruit ICS-43434 I2S microphone](https://www.microcenter.com/quickview/691530/adafruit-industries-i2s-mems-microphone-breakout-ics-43434) (Adafruit product 6049) | The same family as the microphone the sound-card setting was written for. The older [SPH0645 board](https://www.adafruit.com/product/3421) is the same size and should also work. | $5 |
-| 7 | [Waveshare 2.8inch Capacitive Touch LCD](https://www.waveshare.com/2.8inch-capacitive-touch-lcd.htm) (240 x 320, ST7789, CST328 touch) | Glass-fronted touch screen with a plain SPI connection and its own cable. | $17 |
-| 8 | 5 keyboard switches, Cherry MX style (any: Gateron, Kailh, Cherry), plate mount | Made for millions of presses, snap into a printed hole, two legs to solder. Linear or tactile, not clicky, since the microphone is nearby. | $3 |
-| 9 | 5 mm LED, any colour, and a 330 ohm resistor | The "I am listening" light. | $1 |
-| 10 | Silicone-insulated stranded wire, 28 or 30 AWG, several colours | Flexible, and the insulation does not melt back when soldered. | $8 |
-| 11 | M3 screws: 4 of 12 mm, 2 of 8 mm (pan or button head) | They cut their own thread in the printed holes. | $2 |
-| 12 | Hook-and-loop cable tie, 12 mm wide, 150 mm or longer | Holds the Pi and battery to the back cover. | $1 |
-| 13 | Double-sided foam tape, 1 mm; thin double-sided tape; hot glue | Mounting. | $5 |
-| 14 | USB-C cable and charger | Charging. | |
+I could not check prices or stock from here. Expect roughly $200 in total,
+most of it the Pi, the battery board and the screen.
 
-About $115 before filament.
-
-Also needed: soldering iron, flush cutters, calipers, a computer with an SD
-card reader.
+An optional camera is not designed in. A Raspberry Pi Camera Module 3
+connects to a Pi 4 with the cable it comes with, but its mount, a lens
+opening and whether its cable clears the screen board have not been worked
+out.
 
 ## Wiring
 
-Every wire starts at a hole on the Pi's 40-pin header. Pin 1 is the square
-pad, nearest the SD card slot; odd pins are the inner row.
+The screen board plugs onto the Pi's 40 pins, and the battery board
+presses against the Pi from underneath. Neither needs soldering.
 
-| Wire from | To Pi pin | (GPIO) |
+Everything else is soldered to the **screen board**: its socket's 40 solder
+joints are exposed on the screen side, in the 6 mm strip beside the
+display. Each joint sits directly above the Pi pin of the same number: pin
+1 is at the SD card end, and odd pins are the row nearer the display.
+Tin the wire, hold it on the joint and reflow.
+
+| Wire from | To pin | (GPIO) |
 |---|---|---|
 | **Amplifier** VIN | 2 | 5 V |
 | Amplifier GND | 6 | ground |
@@ -63,78 +82,79 @@ pad, nearest the SD card slot; odd pins are the inner row.
 | Amplifier + and − | the speaker's two wires | |
 | **Microphone** 3V | 1 | 3.3 V |
 | Microphone GND | 9 | ground |
-| Microphone BCLK | 12, shared with the amplifier | 18 |
-| Microphone LRCL | 35, shared with the amplifier | 19 |
+| Microphone BCLK | 12, with the amplifier's | 18 |
+| Microphone LRCL | 35, with the amplifier's | 19 |
 | Microphone DOUT | 38 | 20 |
-| Microphone SEL | ground (same pad as its GND) | |
+| Microphone SEL | its own GND pad | |
 | **Yes key** | 11 | 17 |
 | **No key** | 13 | 27 |
 | **Not sure key** | 15 | 22 |
 | **Play key** | 16 | 23 |
-| Other leg of all four keys, chained together | 14 | ground |
+| Other leg of those four keys, chained | 14 | ground |
 | **LED** long leg, through the 330 ohm resistor | 37 | 26 |
 | LED short leg | 39 | ground |
-| **Screen** VCC | 17 | 3.3 V |
-| Screen GND | 20 | ground |
-| Screen MOSI (DIN) | 19 | 10 |
-| Screen SCLK (CLK) | 23 | 11 |
-| Screen LCD_CS | 24 | 8 |
-| Screen LCD_DC | 22 | 25 |
-| Screen LCD_RST | 18 | 24 |
-| Screen LCD_BL | 33 | 13 |
-| Screen TP_SDA | 3 | 2 |
-| Screen TP_SCL | 5 | 3 |
-| Screen TP_INT | 7 | 4 |
-| Screen TP_RST | 29 | 5 |
 | **Power key**, both legs | the PiSugar's "Power Button Pad" and "BAT" pad | not the Pi |
 
-Notes:
+The screen itself uses GPIO 8 to 11, 24 and 25 and the I2C pins, which the
+battery board shares. GPIO 16 is driven by the sound driver; leave pin 36
+alone. The four key GPIOs are also wired to four tiny switches on the edge
+of the screen board, which the case covers; they do no harm.
 
-- Two wires share pin 12 and two share pin 35. Twist each pair together and
-  solder them into the hole as one.
-- Leave GPIO 16 (pin 36) empty; the sound-card setting uses it.
-- The screen's signals differ from Waveshare's own Raspberry Pi example,
-  which puts the backlight on GPIO 18 and reset on GPIO 27. Both are taken
-  here, so follow this table.
-- The power key bridges two pads on the PiSugar, which its documentation
-  describes as doing the same as its own power button. Find them in the
-  board diagram in the
-  [PiSugar 3 documentation](https://docs.pisugar.com/docs/product-wiki/battery/pisugar3/pisugar-3-series).
-  If you would rather not solder to the PiSugar, leave this key out and
-  reach its button through the opening in the top edge.
-- For more volume, join the amplifier's GAIN pad to GND (12 dB instead of
-  9 dB). Try it without first.
+**One cut is needed on the screen board.** A small closed jumper connects
+GPIO 18 to the backlight, and GPIO 18 is the audio clock here. It is on the
+underside, about 17 mm in from the long edge with the socket and 30 mm from
+the short edge with the four tiny switches. Cut the thin bridge between its
+two pads with a knife. In the circuit the backlight is switched on by a
+pull-up and GPIO 18 can only pull it off through a diode, so after the cut
+it should simply stay on; I have read that from the schematic, not seen it.
 
-Wire lengths, cut generously: screen, keys, LED and microphone 120 mm;
-amplifier 80 mm; power key 150 mm. The case opens like a book, with the Pi
-on the back cover and everything else on the front, so the wires need that
-slack.
+The power key bridges two pads that PiSugar's documentation says act as its
+power button; its board diagram shows where they are. If you would rather
+not solder to the battery board, skip it: two pin holes in the top edge of
+the case line up with the board's own two buttons.
+
+Wire lengths: all about 120 mm. Every wired part mounts in the same half of
+the case as the screen board, so nothing crosses a joint.
 
 ## The case
 
-`case/case.py` draws the case; `case/out/` holds the ready-made files, as
-STL and as STEP (Bambu Studio opens both).
+`case/case.py` draws it; `case/out/` has every piece as STL and STEP.
 
-| File | Count | Print with this side on the plate |
+| Piece | Colour | Side on the plate |
 |---|---|---|
-| `fit_test` | 1 | front face |
-| `front` | 1 | front face |
-| `back` | 1 | outside face |
-| `speaker_clamp` | 1 | either |
-| `keycap_yes`, `keycap_no`, `keycap_not_sure`, `keycap_play`, `keycap_power` | 1 each | top face (flip them over) |
+| `fit_test` | any | front face |
+| `front` with `front_inlay` | body colour, accent | front face |
+| `lid` with `lid_inlay` | body colour, accent | outside face |
+| `back` | body colour | outside face |
+| `deck` | dark | flat plate |
+| `speaker_clamp` | any | either |
+| `keycap_*` with `keymark_*` (5 pairs) | one colour per key, contrasting mark | top face |
 
-![Inside of the front](case/front_inside.png)
-![Inside of the back cover](case/back_inside.png)
-![Keycaps](case/keycaps.png)
+![Closed](case/closed.png)
+![Inside of the front](case/inside.png)
 
-Settings that should suit an H2C: PETG or PLA, 0.2 mm layers, 3 walls, 15%
-infill, textured plate. The only place that wants support is the long
-opening in the top edge of `front`; paint support there, or accept a slight
-sag. With several colours loaded, paint the sunken symbols on the keycaps
-in a second colour, and make the yes key green and the no key red. Any
-bought MX keycaps fit too.
+Each `_inlay` and `keymark_` file shares its partner's position. In Bambu
+Studio, select both files, import them as one object with multiple parts,
+and give each part its filament. With body, accent, dark and four cap
+colours this is a seven-colour job, which is what an H2C is for; with
+fewer, print the caps separately.
 
-To change a size, edit the `PARTS` table at the top of `case.py` and run:
+PETG or PLA, 0.2 mm layers, 3 walls, 15% infill. No supports are needed.
+
+**Magnets.** Two sit in pockets on the inside of `front`, glued in after
+printing; the back cover and the body shut them away. Two go in the `lid`,
+inside closed pockets: add a pause at 7.1 mm, drop each magnet in with a
+drop of superglue, and resume. Before that, stack each lid magnet on its
+partner in the body to find which face must point at it, and mark it. The
+pockets are closed on purpose: loose magnets of this size are dangerous if
+a child swallows two. For the same reason the back cover is held by screws,
+not magnets.
+
+**Hinge.** Three knuckles on the body, two on the lid, and a 3 mm rod. The
+lid's holes are 3.4 mm and turn freely; the body's are 3.0 mm and grip.
+Run a 3 mm drill through the body's knuckles if the rod will not start.
+
+To change anything, edit the numbers at the top of `case.py` and run:
 
 ```bash
 pip install cadquery
@@ -146,62 +166,46 @@ python3 case.py
 
 ## Assembly
 
-### 1. Prepare the SD card
+### 1. Print the fit test and try the parts
 
-With Raspberry Pi Imager, write **Raspberry Pi OS Lite (64-bit)**. In its
-settings, set a user name and password, your Wi-Fi, and turn on SSH.
+`fit_test` is the front 8 mm of the body. Check:
 
-### 2. Measure, then print the fit test
+- The screen board drops onto its four pins, glass down, and the display
+  fills the window.
+- The speaker sits on its four pegs.
+- The microphone board fits between its two ribs with its hole over the
+  hole in the case.
+- The LED fits its hole; a magnet fits its pocket.
 
-Check these with calipers against the `PARTS` table in `case.py`, and
-correct the table where they differ:
+Print `deck` too and snap a switch in. If anything is off, tell me the
+measurement or change it in `case.py`. Then print the rest.
 
-| Check | Expected |
-|---|---|
-| Screen outline | 73.06 x 50.54 mm |
-| Screen: is the lit area centred in the glass? | Assumed yes. If not, set `view_dx` / `view_dy`. |
-| Screen thickness, glass to the back of its connector | 8 mm or less |
-| Speaker | 70 x 30 x 17 mm |
-| Microphone board | 12.7 x 16.7 mm |
-| Pi screwed to the PiSugar: battery underside to the top of the Pi's board | 19 mm or less |
+### 2. Prepare the SD card
 
-Print `fit_test`. The screen, speaker, microphone board, LED and a key
-switch should each drop into place without force and without rattling. If
-one does not, fix its number and print the test again. Then print the rest.
+Raspberry Pi Imager, **Raspberry Pi OS Lite (64-bit)**. In its settings set
+a user and password, Wi-Fi, and turn on SSH.
 
-### 3. Fit the PiSugar
+### 3. Test the electronics on the bench
 
-Screw the Pi to the PiSugar as its instructions show, with the SD card in.
-Hold the stack up to the opening in the top edge of `front`: the USB-C port
-and the PiSugar's lights should show through it. The opening is wide
-because the port's exact position was not known; it can be narrowed in
-`case.py` once you have seen where it is.
-
-### 4. Solder
-
-Solder wires to the modules first, then to the Pi, following the wiring
-table. Insert each wire from the top of the Pi (the side with the chips),
-solder on that side too, and lay the wire flat towards the middle of the
-board. Keep joints low: there are about 7 mm between the Pi and the back of
-the screen.
-
-Snap the five switches into the front from outside before soldering their
-legs. Chain one leg of the four answer keys together with short wire links.
-
-### 5. Test on the bench, before closing anything
-
-Power on (tap, then hold, the PiSugar's power button), connect with SSH,
-and follow [the install steps](../README.md#install). Then add to
-`/boot/firmware/config.txt`:
+1. Cut the backlight jumper on the screen board.
+2. Screw the PiSugar under the Pi, as its instructions show.
+3. Solder the amplifier, speaker, microphone, keys and LED to the screen
+   board, then plug it onto the Pi.
+4. Power on, connect with SSH and follow
+   [the install steps](../README.md#install).
+5. Add to `/boot/firmware/config.txt`, then reboot:
 
 ```
 dtparam=i2c_arm=on
 dtparam=spi=on
+dtparam=audio=off
 dtoverlay=googlevoicehat-soundcard
+dtoverlay=pitft28-capacitive,rotate=270,speed=32000000,fps=25
 ```
 
-Reboot. `aplay -l` and `arecord -l` should both list the same new card. Put
-its name in `/etc/gostt-guess/config.yaml`:
+   If the picture is upside down, change `rotate=270` to `rotate=90`.
+
+6. Put the sound card in `/etc/gostt-guess/config.yaml`:
 
 ```yaml
 audio:
@@ -210,17 +214,12 @@ audio:
   gain: 8
 ```
 
-Then work through
-[Test it, one part at a time](../README.md#test-it-one-part-at-a-time).
-`gostt-guess check` tests the speaker and microphone and says how to set
-`gain`; `gostt-guess check -buttons 20s` tests the keys.
-
-If the card plays but does not record, or the reverse, that is the untested
-part of this design. The fallback is a small USB sound adapter on the Pi's
-USB port; tell me what `arecord -l` and `dmesg | grep -i voicehat` print.
-
-Install the PiSugar's software so that holding the power key shuts the Pi
-down cleanly:
+7. Work through
+   [Test it, one part at a time](../README.md#test-it-one-part-at-a-time).
+   Then play a game with `gostt-guess -buttons=false -debug` and check
+   that each reply registers within about a second of being spoken.
+8. Install the battery board's software and set a long press of the power
+   key to shut down:
 
 ```bash
 wget https://cdn.pisugar.com/release/pisugar-power-manager.sh
@@ -230,45 +229,64 @@ wget https://cdn.pisugar.com/release/pisugar-power-manager.sh
 bash pisugar-power-manager.sh -c release
 ```
 
-Choose `PiSugar3`, then open `http://<the Pi's address>:8421` and set the
-power button's long press to shut down.
+Choose `PiSugar3`, then open `http://<the Pi's address>:8421`.
 
-### 6. Mount everything
+Do not close the case until all of this works.
 
-Front:
+### 4. Build it into the case
 
-1. Screen: thin double-sided tape on the black border of the glass, then
-   press it into its corner ribs, cable towards the middle of the case.
-2. Speaker: into its pocket with the cone towards the slots, then the clamp
-   across its back with the two 8 mm screws. Snug, not tight.
-3. Microphone: into its small pocket with the hole in the board over the
-   hole in the case, held by a dab of hot glue at two corners. Keep glue
-   away from the hole.
-4. LED: into its hole, with a dab of hot glue behind.
-5. Amplifier: foam tape, on the inside of the front beside the keys.
-6. Keycaps on.
-
-Back cover:
-
-1. Foam tape on the battery, then press the stack into its two corner ribs
-   with the ports towards the top edge.
-2. Thread the hook-and-loop tie under the two small bridges and over the
-   Pi, lengthwise, and close it.
-
-Close the case like a book, check no wire is pinched and that the charging
-port lines up with its opening, and fit the four 12 mm screws. They cut
-their own thread: turn until snug and stop.
+1. Glue the two body magnets into their pockets on the inside of `front`.
+2. Snap the five switches into `deck` from above. Screw the deck to its
+   two posts inside the front with 8 mm screws. Fit the keycaps.
+3. Speaker onto its pegs, sound side to the slots; clamp across its back
+   with two 8 mm screws.
+4. Microphone between its ribs, hole to hole, with hot glue at two corners
+   only. LED into its hole with hot glue behind.
+5. Amplifier: foam tape, under the key deck.
+6. Lower the Pi stack in, screen first, onto the four pins. The charging
+   port should show in the opening in the top edge.
+7. Lay the foam pad on the battery. Fit the back cover with the four
+   12 mm screws until snug.
+8. Line up the lid's knuckles and push the rod through.
 
 Finally: `sudo systemctl enable --now gostt-guess`.
 
-## What is known and not known
+## What is established and what is not
 
-| | |
-|---|---|
-| The printed parts are valid single solids and their features line up with each other | Checked in the CAD model |
-| The parts fit the case | **Not checked.** Sizes are from listings; the screen's thickness, the position of its lit area and the PiSugar's port position are assumptions. That is what `fit_test` and step 3 are for. |
-| Amplifier and microphone on one sound card | **Not checked** with these boards |
-| Battery life | Not measured. A 1200 mAh cell is about 4 Wh; expect an hour or two of play. |
-| Loudness | Not measured |
-| The keycaps' stems grip the switches | Not checked; printed stems often need a tolerance tweak (`cross` in `keycap`) |
-| Screen | Wired and mounted; the software does not use it yet |
+Established from the makers' own files (the display board's CAD and board
+layout, the speaker, microphone and amplifier CAD, the PiSugar 3 Plus CAD
+and PiSugar's own case for it, the Linux sound driver's source):
+
+- Every printed piece is a valid solid, and none collides with the
+  display board, the speaker, the battery board, the space PiSugar's own
+  case allows for the battery, or the key switches and caps, with the lid
+  closed.
+- The display board's mounting holes, display outline and socket position;
+  the speaker's flange holes; the charging port's position, which lines up
+  with its opening.
+- The sound driver has playback and recording on one device, at 48 kHz.
+  Adafruit's installers for this amplifier and for this microphone family
+  both select it.
+- The screen's driver and its `pitft28-capacitive` setting are part of
+  Raspberry Pi OS.
+
+Not established, and what the design does about each:
+
+| Unknown | Consequence | Provision |
+|---|---|---|
+| Speed on a real Pi 4. The basis is the library's own statement and a scaled benchmark, not a measurement of this program. | If slower than expected, replies lag. | Step 3 tests it before the case is closed. `hear.threads` and `hear.decoding` are the adjustments. |
+| Amplifier and microphone working at the same moment on one driver. Each direction is documented; I found no page showing both together. | If not, one of them needs a USB sound adapter. | Step 3 tests it first. |
+| Whether the model understands your child. | Asks again more often. | The keys answer every question. |
+| The battery's real thickness. The case uses the 11.1 mm that PiSugar's own case leaves. | Back cover would not close, or the stack would be loose. | 2 mm of slack filled by the foam pad; `FOAM` in `case.py`. |
+| How far the Pi 4's sockets overhang its board. Raspberry Pi's drawing could not be opened from here. | A wall could foul a socket. | 4 mm and 3.5 mm of clearance, more than any of them needs. |
+| Height of the four tiny switches on the screen board; the CAD model places them oddly. | The front could press on them. | A relief 5.4 mm high; they are 5.0 in the model. |
+| That the backlight stays on after the jumper is cut. | Dark screen. | Bridge the jumper again with solder; the screen then dims while sound plays. |
+| Where the lit area sits within the display. | Cosmetic: an uneven black border. | The window shows the whole display. |
+| Real battery life, loudness, and temperature inside a closed case. | | Vents in the top edge and back; the Pi slows itself down before it overheats. |
+| Print fits: keycap stems, hinge, magnet pockets, magnet strength through 1.7 mm. | Loose or tight. | `fit_test`; all are single numbers in `case.py`. |
+| Anything on the screen. | The program does not draw on it yet. | Next piece of software. |
+
+To rerun the collision check, download `2423.step`, `3351.step` (from
+github.com/adafruit/Adafruit_CAD_Parts) and `pisugar3plus.STEP` as
+`ps3plus.step` (from github.com/PiSugar/PiSugar, folder `model_pro`) into a
+folder and run `python3 case/check_fit.py <folder>`.

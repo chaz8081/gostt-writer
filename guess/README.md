@@ -75,9 +75,9 @@ it sounds.
 
 The full build is in [`hardware/README.md`](hardware/README.md): the parts
 list with links, the wiring, the printable case and the assembly steps. In
-short: a Raspberry Pi Zero 2 W on a PiSugar 3 battery board, a 3 W I2S
-amplifier and enclosed speaker, an I2S microphone, five keyboard switches,
-a 2.8 inch touch screen, in a 150 x 96 x 40 mm printed handheld.
+short: a Raspberry Pi 4 on a PiSugar 3 Plus battery board, a 2.8 inch touch
+screen, a 3 W I2S amplifier and enclosed speaker, an I2S microphone and
+five keyboard switches, in a hinged printed case with a magnetic lid.
 
 On a Pi 4 or 5, a USB speakerphone and no buttons is enough for a first
 try of the software: `gostt-guess -buttons=false`.
