@@ -10,7 +10,7 @@ require (
 	github.com/robotn/gohook v0.42.3
 	golang.org/x/crypto v0.52.0
 	gopkg.in/yaml.v3 v3.0.1
-	tinygo.org/x/bluetooth v0.15.0
+	tinygo.org/x/bluetooth v0.17.0
 )
 
 require (
@@ -26,14 +26,14 @@ require (
 	github.com/lufia/plan9stats v0.0.0-20260802145828-341c2f0c90b5 // indirect
 	github.com/otiai10/gosseract/v2 v2.4.1 // indirect
 	github.com/power-devops/perfstat v0.0.0-20260916203055-22a1a467d9f0 // indirect
-	github.com/saltosystems/winrt-go v0.0.0-20260317170058-9c2fec580d96 // indirect
+	github.com/saltosystems/winrt-go v0.0.0-20261015065339-8ef619c103a3 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.9 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
-	github.com/soypat/cyw43439 v0.1.0 // indirect
-	github.com/soypat/lneto v0.1.0 // indirect
-	github.com/soypat/seqs v0.0.0-20250124201400-0d65bc7c1710 // indirect
+	github.com/soypat/cyw43439 v0.2.0 // indirect
+	github.com/soypat/lneto v0.4.0 // indirect
+	github.com/soypat/seqs v0.0.0-20260125140838-2c1c6b1bd69e // indirect
 	github.com/tailscale/win v0.0.0-20260619195133-2d76c33a64c1 // indirect
-	github.com/tinygo-org/cbgo v0.0.4 // indirect
+	github.com/tinygo-org/cbgo v0.1.0 // indirect
 	github.com/tinygo-org/pio v0.3.0 // indirect
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
@@ -47,6 +47,7 @@ require (
 	golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e // indirect
 	golang.org/x/image v0.47.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
+	tinygo.org/x/espradio v0.5.0 // indirect
 )
 
 replace github.com/ggerganov/whisper.cpp/bindings/go => ./third_party/whisper.cpp/bindings/go
